@@ -17,8 +17,8 @@
 
 ToolForge 是一个精心设计的流水线系统，用于自动化创建高质量的多跳推理任务训练数据。系统通过四个不同的阶段处理原始问答数据：
 
-1. **Tool Construction and Diversification（Stage 1）**：利用一个基础工具大规模生成虚拟的多样化工具
-2. **Selection of Tool-Calling Paradigm（Stage 2）**：为每个query提供Optimal tools、Optimal Tool-calling paradigm、Optimal reasoning rationale
+1. **工具的构建与多样化（Stage 1）**：利用一个基础工具大规模生成虚拟的多样化工具
+2. **工具调用范式的选择（Stage 2）**：为每个query提供Optimal tools、Optimal Tool-calling paradigm、Optimal reasoning rationale
 3. **数据生成 + 验证评分（Stage 3 & Stage 4）**：生成具有反思和多跳推理能力的多轮工具调用对话数据，并使用基于规则和基于LLM的方法验证生成数据的质量
 
 可以通过启动webui页面，轻松实现上述三个步骤的功能。
@@ -35,10 +35,10 @@ ToolForge 是一个精心设计的流水线系统，用于自动化创建高质�
 
 ```
 ToolForge/
-├── Stage_1/                  # Tool Construction and Diversification
+├── Stage_1/                  # 工具的构建与多样化
 │   ├── generate_tool.py
 │   └── tool_prompts.py
-├── Stage_2/                  # Selection of Tool-Calling Paradigm
+├── Stage_2/                  # 工具调用范式的选择
 │   └── code/
 │       ├── llm_generate_label.py
 │       └── tool_prompts.py
