@@ -1,0 +1,192 @@
+# Search engine configuration
+search_engine:
+  type: rag_server
+  url: http://10.148.6.55:5003/retrieve
+  timeout: 60
+  max_retries: 3
+
+  # Search parameters
+  top_k: 10
+  return_scores: true
+
+  search_method: function  # Options: "tag" or "function"
+
+  tag_format:
+    search_tag: "<search>"
+    search_close: "</search>"
+    info_tag: "<information>"
+    info_close: "</information>"
+    think_tag: "<think>"
+    think_close: "</think>"
+    answer_tag: "<answer>"
+    answer_close: "</answer>"
+
+  functions:
+    - name: people_organizations_search
+      description: Search tool for people and organizations (biographies, family/relations, career, works, awards; organizations' founding, headquarters, products, affiliations).
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          person_identifiers:
+            type: array
+            items:
+              type: string
+            description: Person names and aliases/titles.
+          organization_identifiers:
+            type: array
+            items:
+              type: string
+            description: Organization/company/party/institution names and aliases.
+          info_categories:
+            type: array
+            items:
+              type: string
+            description: Categories such as ["basic information","education history","career history","family relations","achievements","awards","works","positions","affiliations"].
+          life_periods:
+            type: array
+            items:
+              type: string
+            description: Life stages such as ["childhood","education period","career","later life","legacy"].
+        required: ["query"]
+
+    - name: places_history_events_search
+      description: Search tool for places, historical topics, and major events (wars, treaties, elections, disasters, movements).
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          place_identifiers:
+            type: array
+            items:
+              type: string
+            description: Place names/administrative divisions/landmarks.
+          event_identifiers:
+            type: array
+            items:
+              type: string
+            description: Event/war/treaty/election names.
+          category_hints:
+            type: array
+            items:
+              type: string
+            description: Suggested values like ["country","city","province","river","war","treaty","election","revolution","natural disaster"].
+          attributes:
+            type: array
+            items:
+              type: string
+            description: Suggested values like ["capital","population","area","participants","outcome","date","location"].
+        required: ["query"]
+
+    - name: science_technology_math_search
+      description: Search tool for natural/physical/life sciences, engineering, computer science, and mathematics (concepts, theorems, algorithms, devices, standards).
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          concept_identifiers:
+            type: array
+            items:
+              type: string
+            description: Concepts/theories/terms (e.g., "electromagnetism","NP-completeness").
+          algorithm_identifiers:
+            type: array
+            items:
+              type: string
+            description: Algorithms/protocols/models (e.g., "RSA","PageRank","backpropagation").
+          device_or_system_identifiers:
+            type: array
+            items:
+              type: string
+            description: Devices/systems/standards (e.g., "TCP/IP","LHC","CRISPR").
+          aspects:
+            type: array
+            items:
+              type: string
+            description: Suggested values like ["definition","inventor","applications","complexity","formula","history"].
+        required: ["query"]
+
+    - name: culture_arts_sports_search
+      description: Search tool for culture/arts (literature, film, music, visual arts, theater, pop culture) and sports (leagues, clubs, athletes, competitions, records).
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          work_identifiers:
+            type: array
+            items:
+              type: string
+            description: Titles of works/programs/albums/movies/novels/series.
+          artist_or_creator_identifiers:
+            type: array
+            items:
+              type: string
+            description: Artists/writers/directors/bands/producers.
+          team_or_competition_identifiers:
+            type: array
+            items:
+              type: string
+            description: Teams/clubs/national teams/leagues/associations/competitions.
+          categories:
+            type: array
+            items:
+              type: string
+            description: Suggested values like ["release date","author","cast","box office","genre","award winners","season standings","records"].
+        required: ["query"]
+
+    - name: nature_health_everydaylife_search
+      description: Search tool for nature (species/ecology/geology), health (diseases/symptoms/treatments/epidemiology), and everyday life (food/dishes/nutrition/customs).
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          species_identifiers:
+            type: array
+            items:
+              type: string
+            description: Scientific/common species names.
+          disease_or_condition_identifiers:
+            type: array
+            items:
+              type: string
+            description: Diseases/syndromes/pathogens.
+          food_or_diet_identifiers:
+            type: array
+            items:
+              type: string
+            description: Dishes/ingredients/diets/nutrition concepts.
+          topic_features:
+            type: array
+            items:
+              type: string
+            description: Suggested values like ["habitat","distribution","conservation status","symptoms","treatment","prevention","ingredients","nutrition facts","cultural significance"].
+        required: ["query"]
+
+    - name: general_information_search
+      description: General fallback search tool when the query does not fit into specialized topics or needs exploratory retrieval.
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Specific query content
+          topic_hint:
+            type: string
+            enum: [people_organizations, places_history_events, science_technology_math, culture_arts_sports, nature_health_everydaylife]
+            description: Optional topic hint for routing.
+          focus:
+            type: array
+            items:
+              type: string
+            description: Optional focus aspects (e.g., "definition","birthplace","winners").
+        required: ["query"]
