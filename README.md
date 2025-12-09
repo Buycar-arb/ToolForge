@@ -1,125 +1,238 @@
-# Evaluation Framework
+# ToolForge
 
-Evaluate LLMs with two search methods: tag-based (`<search>` tags) and function-based (direct function calls).
+English | [简体中文](README-zh.md)
 
-## Setup
+A comprehensive multi-stage pipeline system for generating, labeling, and validating multi-hop reasoning conversational AI training data.
+
+## 📋 Table of Contents
+
+- [Project Overview](#project-overview)
+- [System Architecture](#system-architecture)
+- [Quick Start](#quick-start)
+- [Core Features](#core-features)
+- [Configuration](#configuration)
+
+## 🎯 Project Overview
+
+ToolForge is a carefully designed pipeline system for automating the creation of high-quality multi-hop reasoning task training data. The system processes raw question-answer data through four distinct stages:
+
+1. **Tool Construction and Diversification (Stage 1)**: Leverages a base tool to generate diverse virtual tools at scale
+2. **Selection of Tool-Calling Paradigm (Stage 2)**: Provides optimal tools, optimal tool-calling paradigm, and optimal reasoning rationale for each query
+3. **Data Generation + Validation & Scoring (Stage 3 & Stage 4)**: Generates multi-turn tool-calling conversation data with reflection and multi-hop reasoning capabilities, and validates the quality of generated data using rule-based and LLM-based methods
+
+All three stages can be easily implemented through the WebUI interface.Our dataset is available at [ToolForge datasets](https://huggingface.co/datasets/buycar/ToolForge_datasets/tree/main)
+
+**Core Features**:
+- 🔧 Four-stage automated processing pipeline
+- 🛠️ Extensible tool library management system
+- 🎯 Dual validation mechanism (rules + LLM)
+- 🖥️ Interactive Gradio Web UI
+- 🚀 Concurrent processing with API key rotation
+
+## 🏗 System Architecture
+
+```
+ToolForge/
+├── Stage_1/                  # Tool Construction and Diversification
+│   ├── generate_tool.py
+│   └── tool_prompts.py
+├── Stage_2/                  # Selection of Tool-Calling Paradigm
+│   └── code/
+│       ├── llm_generate_label.py
+│       └── tool_prompts.py
+├── Stage_3/                  # Data Generation
+│   ├── config/              # Configuration files
+│   ├── core/                # API client
+│   ├── services/            # Conversation generation, tool management
+│   ├── tool_bank/tools/     # Tool definitions (JSONL)
+│   └── prompts/             # Prompt templates
+├── Stage_4/                  # Quality Validation
+│   ├── config/              # Configuration files    
+│   ├── core/                # LLM evaluation client
+│   ├── prompts/             # Evaluation prompts
+│   ├── utils/               # Helper functions
+│   └── validators/          # Validation engine
+└── gradio_webui/            # Web Interface
+    ├── quick_fast.py        # Main application
+    ├── feature_tool_variant_generator.py
+    ├── feature_generate_judge.py
+    └── feature_tool_list_manager.py
+```
+
+## 🚀 Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-pip install -r evaluations/requirements.txt
+cd ToolForge/gradio_webui
+pip install -r requirements.txt
 ```
 
-### 2. Configuration
+### 2. Configure API Keys
 
-All configs in `evaluations/config/`:
-- **models.yaml**: Set `active_model` and API keys
-- **datasets.yaml**: Set `active_datasets`
-- **search_engines.yaml**: Set `search_method` (tag/function)
-- **prompts.yaml**: Customize prompts
-
-### 3. Start RAG Server
-
+**Option A - Environment Variables (Recommended)**:
 ```bash
-cd current_repo
-pip3 install cachebox
-pip3 install accelerate bitsandbytes datasets deepspeed==0.16.4 einops flash-attn==2.7.0.post2 isort jsonlines loralib optimum packaging peft pynvml>=12.0.0 ray[default]==2.46.0 tensorboard torch==2.6.0 torchmetrics tqdm transformers==4.51.3 transformers_stream_generator wandb wheel
-pip3 install vllm==0.8.5      # Mainly for Qwen3 model support
-pip3 install "qwen-agent[code_interpreter]"
-pip3 install llama_index bs4 pymilvus infinity_client codetiming tensordict==0.6 omegaconf torchdata==0.10.0 hydra-core easydict dill python-multipart mcp==1.9.3
-pip3 install -e . --no-deps
-pip3 install faiss-gpu-cu12   # Optional, needed for end-to-end search model training with rag_server
-pip3 install nvidia-cublas-cu12==12.4.5.8  # Optional, needed while encountering ray worker died issue during training
-
-
-# 指向你自己的目录
-export HF_HOME=/mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/yanghaocheng04/hf_home
-export HF_DATASETS_CACHE=$HF_HOME/datasets
-export TRANSFORMERS_CACHE=$HF_HOME/transformers
-export TMPDIR=/mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/yanghaocheng04/tmp
-
-mkdir -p "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$TMPDIR"
-
-bash rag_server/launch.sh
+export API_KEYS="key1,key2,key3"
+export API_BASE_URL="https://api.openai.com/v1"
 ```
 
-### 4. (Optional) Start vLLM Server
+**Option B - Configuration Files**:
+Edit the `api_keys` list in the following files:
+- `Stage_2/code/llm_generate_label.py`
+- `Stage_3/config/api_keys.py`
+- `Stage_4/config/api_keys.py`
 
-For open-source models:
+### 3. Launch Web Interface
+
 ```bash
-python3 -m vllm.entrypoints.openai.api_server \
-    --model /mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/deepsearch_files/LLMbasemodels/huggingface.co/Qwen/Qwen3-8B \
-    --port 8000 \
-    --served-model-name qwen3-8b # 需要与models.yaml中注册的名字一致
+python quick_fast.py
+# Visit http://localhost:7860
 ```
 
-## Run Evaluation
+## 🎯 Core Features
 
-From the **root directory**:
+### Feature 1: Tool Construction and Diversification
 
-```bash
-# Tag-based search
-python evaluations/run_evaluation.py 
-```
+Generate semantic variants of original tools to expand the tool library.
 
-## Recalculate Metrics
+#### 1.1 Tool Variant Generation
 
-After evaluation completes, you can recalculate metrics independently:
-
-```bash
-# Recalculate and update metrics in-place
-python evaluations/src/metrics/metrics.py evaluations/results/gpt-4_function_20250918_104723/bamboogle_results.json
-
-# Print metrics without updating file
-python evaluations/src/metrics/metrics.py evaluations/results/gpt-4_function_20250918_104723/bamboogle_results.json --print
-```
-
-
-## Datasets
-
-- **NQ**: Natural Questions
-- **PopQA**: Popular QA
-- **Musique**: Multi-hop reasoning
-- **Bamboogle**: Complex reasoning
-
-Data cached in `evaluations/data/` after first download.
-
-## Results
-```bash
-Tag-based方式：
-  {
-      'id': str,           # 示例ID
-      'question': str,     # 原始问题
-      'gold_answer': str,  # 标准答案
-      'prediction': str,   # 模型预测
-      'response': str      # 完整响应文本
+**Input**: JSON definition of a single tool
+```json
+{
+  "name": "example_search",
+  "description": "Example search tool",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Search content"}
+    },
+    "required": ["query"]
   }
-
-  Function-based方式：
-  {
-      'id': str,           # 示例ID
-      'question': str,     # 原始问题
-      'gold_answer': str,  # 标准答案
-      'prediction': str,   # 模型预测
-      'messages': List     # 完整对话历史
-  }
+}
 ```
 
-## Search Methods
+**Configuration Parameters**:
+- Target generation count: 10-50 (recommended)
+- Cosine similarity threshold: 0.7 (controls semantic similarity)
+- BM25 similarity threshold: 0.6 (avoids excessive similarity)
+- Model: gpt-4.1 / Claude series
+- Temperature: 1.0
 
-### Tag-based
-- For Search-R1 trained models
-- Uses `<search>query</search>` tags
-- Direct text generation
+**Output**: JSONL file with one tool variant per line
 
-### Function-based
-- For any model supporting function/tool calling
-- Specialized search functions (food, cloth, people, location, general)
-- Direct execution without subprocess overhead
+#### 1.2 Tool List Management
 
-## Metrics
+Manage the TOOL_LIST configuration in `Stage_2/code/tool_prompts.py`.
 
-- **Exact Match (EM)**: Exact answer matching
-- **F1 Score**: Token-level overlap
-- **Search Stats**: Queries per question, iterations
+**Operation Flow**:
+1. Click "Refresh Tool List" to scan the tool library
+2. Select tools → Click "Add to TOOL_LIST"
+3. Remove unwanted tools
+4. Click "Save" to update configuration file
 
+#### 1.3 File Viewer
+
+View generated tool variants with line-by-line browsing and JSON formatting support.
+
+---
+
+### Feature 2: Selection of Tool-Calling Paradigm
+
+Analyze multi-hop questions and automatically label appropriate tools and execution paths.
+
+#### 2.1 Labeling Process
+
+**Input Data Format** (JSONL):
+```json
+{
+  "question": "Who is the author of Harry Potter? When was her first book published?",
+  "answer": "J.K. Rowling, 1997",
+  "type": "bridge",
+  "supporting_facts": [...],
+  "context": [...]
+}
+```
+
+**Output Format** (with three additional fields):
+```json
+{
+  "question": "...",
+  "answer": "...",
+  "reasoning": "This is a two-hop question: 1) Find the author 2) Query publication date...",
+  "tool_select": "person_information_search, creation_information_search",
+  "route_select": "case_C2"
+}
+```
+
+**Route Types**:
+- `SRST`: Single-Round Single-Tool (corresponds to case_A)
+- `SRMT`: Single-Round Multi-Tool (corresponds to case_B)
+- `MRST`: Multi-Round Single-Tool (corresponds to case_D)
+- `MRMT`: Multi-Round Multi-Tool (corresponds to case_C)
+
+#### 2.2 Real-time Monitoring
+
+**LLM Real-time Output** window displays:
+- Current question being processed
+- LLM's reasoning process
+- Tool selection and path planning rationale
+
+#### 2.3 File Viewer
+
+View input files, output files, or custom JSONL files.
+
+---
+
+### Feature 3: Multi-turn Tool-Calling Conversation Data Generation and Validation
+
+Integrates Stage 3 and Stage 4 to generate and validate high-quality multi-turn conversation data.
+
+### Tool Definition Format
+
+Tool definitions are located in `Stage_3/tool_bank/tools/` in JSONL format:
+
+```json
+{
+  "name": "example_search",
+  "description": "Search tool for finding specific information",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Search query content"},
+      "category": {"type": "string", "description": "Search category (optional)"}
+    },
+    "required": ["query"]
+  }
+}
+```
+
+### Adding Custom Tools
+
+1. Create a JSONL file in `Stage_3/tool_bank/tools/`
+2. Define tools following the format above
+3. Use the Tool List Manager in the Web UI to add to TOOL_LIST
+
+### Parameter Recommendations
+
+| Scenario | MAX_LINES | CONCURRENCY | API Keys |
+|----------|-----------|-------------|----------|
+| Development Testing | 10 | 2 | 1 |
+| Small Batch | 1000 | 5-10 | 2-3 |
+| Large Batch | 10000+ | 15-20 | 5+ |
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file
+
+## 📞 Support
+
+- 📖 Check [Complete Documentation](README.md)
+- 🐛 Submit [Issues](https://github.com/yourusername/ToolForge/issues)
+- 💬 Join [Discussions](https://github.com/yourusername/ToolForge/discussions)
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: 2025-01-15  
+**Maintainers**: ToolForge Team
