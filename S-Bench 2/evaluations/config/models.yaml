@@ -1,0 +1,114 @@
+# Model configurations
+# Select which model to evaluate
+active_model: qwen3-8b  # Change to: gpt-4, deepseek, qwen3-8b, llama-8b
+
+models:
+  gpt-4o-2024-08-06:
+    type: closed_source
+    api_key: 
+    endpoint:  
+    model_name: gpt-4o-2024-08-06
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  gpt-5:
+    type: closed_source
+    api_key: 
+    endpoint: 
+    model_name: gpt-5
+    max_tokens: 8000
+    temperature: 0
+    timeout: 60
+
+  claude-4:
+    type: closed_source
+    api_key: 
+    endpoint: 
+    model_name: vertex.claude-sonnet-4
+    max_tokens: 8000
+    temperature: 0
+    timeout: 60
+
+  grok-3:
+    type: closed_source
+    api_key: 
+    endpoint:
+    model_name: grok-3  
+    max_tokens: 8000
+    temperature: 0
+    timeout: 60
+    
+
+  deepseek:
+    type: closed_source
+    api_key: s
+    endpoint: 
+    model_name: deepseek-chat
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-8b:
+    type: open_source
+    model_path: qwen3-8b
+    server_url: http://localhost:8001
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-8b_copy:
+    type: open_source
+    model_path: qwen3-8b_copy
+    server_url: http://localhost:8004
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  llama-8b:
+    type: open_source
+    model_path: meta-llama/Llama-3.1-8B-Instruct
+    server_url: http://localhost:8001
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-4b:
+    type: open_source
+    model_path: qwen3-4b
+    server_url: http://localhost:8000
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-235b:
+    type: open_source
+    model_path: qwen3-235b
+    server_url: http://localhost:8003
+    max_tokens: 2048
+    temperature: 0
+    timeout: 300
+
+  qwen3-32b:
+    type: open_source
+    model_path: qwen3-32b
+    server_url: http://localhost:8002
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-32b_copy:
+    type: open_source
+    model_path: qwen3-32b_copy
+    server_url: http://localhost:8005
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
+
+  qwen3-8b-sft:
+    type: open_source
+    model_path: qwen3-8b-sft
+    server_url: http://localhost:7999
+    max_tokens: 2048
+    temperature: 0
+    timeout: 60
