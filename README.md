@@ -45,7 +45,7 @@ The pipeline trains LLMs (primarily **Qwen3**) to accurately select and invoke t
 
 - 🏭 **Full pipeline automation** — from raw QA data to validated SFT training data
 - 📦 **Built-in sample datasets** — HotpotQA & 2WikiMultihopQA ready to use
-- 🔀 **29 dialogue case types** — A1-A4 (single-turn), B1-B6 (reflection), C1,C3-C10 (dual-tool), D1-D10 (complex)
+- 🔀 **29 dialogue case types** — A1-A4 (Single-Round Single-Tool), B1-B6 (Single-Round Multi-Tool), C1,C3-C10 (Multi-Round Single-Tool), D1-D10 (Multi-Round Multi-Tool)
 - 🌐 **Bilingual support** — Chinese & English training datasets
 - 🛠️ **22 domain tool libraries** — academic, medical, geographic, economic, and more
 - ✅ **Dual-stage validation** — rule-based (9 checks) + LLM scoring
