@@ -4,7 +4,7 @@ import os
 
 # API configuration
 API_CONFIG = {
-    "url": os.getenv("API_BASE_URL", "https://api.openai.com/v1"),
+    "url": os.getenv("API_BASE_URL", "https://api.openai.com/v1") + "/chat/completions",
     "model": os.getenv("JUDGE_MODEL", "gpt-4.1"),
     "temperature": 0,
     "max_tokens": 8192,

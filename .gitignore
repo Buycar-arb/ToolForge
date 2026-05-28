@@ -81,3 +81,8 @@ logs/
 # Jupyter notebooks checkpoints
 # ============================================================
 .ipynb_checkpoints/
+
+# ============================================================
+# Benchmark inference output
+# ============================================================
+ourbenchmark_inference_output/

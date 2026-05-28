@@ -18,31 +18,12 @@ from openai import (
 from .base_model import BaseModel
 
 
-# API Keys for the new implementation
-API_KEYS = [
-    "1801520868460679207",
-    "1801520829835173916",
-    "1889146223668690996",
-    "1920105122387161134",
-    "1920105181459755034",
-    "1718871834076307489",
-    "1737820362802688060",
-    "1742879892716675171",
-    "1775083086435561521",
-    "1796110759362199605",
-    "1794984524074676265",
-    "1792464990918938657",
-    "1789931624457855004",
-    "1789903374117359714",
-    "1787822145012584505",
-    "1785146944130732056",
-    "1785146918596018242",
-    "1785146889328074779",
-    "1785146861184548942",
-    "1785146832369369093",
-    "1783462889744248849",
-    "1783462795028553741"
-]
+# API Keys loaded from environment variable (comma-separated)
+_api_keys_raw = os.getenv("API_KEYS", "")
+API_KEYS = [k.strip() for k in _api_keys_raw.split(",") if k.strip()]
+
+# API Base URL loaded from environment variable
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 
 
 def find_closing_quote(text, start_pos):
@@ -185,7 +166,7 @@ class APICaller:
         self.api_keys_info = [
             {
                 "key": key,
-                "client": AsyncOpenAI(api_key=key, base_url="https://aigc.sankuai.com/v1/openai/native"),
+                "client": AsyncOpenAI(api_key=key, base_url=API_BASE_URL),
                 "count": 0
             }
             for key in API_KEYS

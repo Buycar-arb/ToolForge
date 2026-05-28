@@ -55,7 +55,10 @@ class BaseProcessor(ABC):
         return extract_tags_as_str_list(text, tag, return_as_list)
     
     def parse_jsonl_string(self, data_string):
-        return parse_jsonl_string(data_string)
+        result = parse_jsonl_string(data_string)
+        if result is None:
+            raise ValueError("JSON parsing failed, model output format invalid")
+        return result
     
     def bm25s_function(self, corpus, query, top_k_min, top_k_max, language='english'):
         return self.bm25_processor.bm25s_function(corpus, query, top_k_min, top_k_max, language)

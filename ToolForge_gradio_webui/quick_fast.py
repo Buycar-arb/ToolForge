@@ -6,12 +6,17 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from collections import deque
+from dotenv import load_dotenv
 
 # Get current file directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Add parent directory to Python search path
-sys.path.append(os.path.dirname(current_dir))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+# Load .env from project root
+load_dotenv(os.path.join(parent_dir, ".env"))
 
 from Stage_2.code.llm_generate_label import LLMGenerateLabel, process_single_line
 from feature_generate_judge import FeatureGenerateJudgeProcessor

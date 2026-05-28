@@ -120,7 +120,7 @@ class FileProcessor:
         
         if not all_jsonl_files:
             print(f"Warning: No JSONL files found in {tool_bank_dir}")
-            return [], [], "without general_file", "without general_file", False, [], []
+            return [], [], "without general_file", "without general_file", False, []
         
         # Classify files into good_tool files and others
         available_files = []      # Files not in good_tool_content
@@ -212,6 +212,5 @@ class FileProcessor:
             available_general_status,
             good_general_status,
             general_tool_name_and_content,
-            good_tool_mapping,
-            good_tool_full_data
+            good_tool_mapping
         )

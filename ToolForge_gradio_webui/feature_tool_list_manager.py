@@ -18,10 +18,10 @@ class ToolListManager:
         self.project_root = os.path.dirname(self.current_dir)
         
         # Tool bank path
-        self.tool_bank_dir = os.path.join(self.project_root, "stage_2_generate", "tool_bank", "tools")
-        
+        self.tool_bank_dir = os.path.join(self.project_root, "Stage_3", "tool_bank", "tools")
+
         # tool_prompts.py path
-        self.tool_prompts_path = os.path.join(self.project_root, "stage_1_label", "code", "tool_prompts.py")
+        self.tool_prompts_path = os.path.join(self.project_root, "Stage_2", "code", "tool_prompts.py")
         
         # Cache
         self.available_tools = {}  # {tool_name: description}
