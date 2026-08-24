@@ -7,8 +7,8 @@
 <p>
   <a href="https://arxiv.org/abs/2512.16149">
     <img src="https://img.shields.io/badge/arXiv-2512.16149-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv"></a>
-  <a href="https://huggingface.co/datasets/buycar/ToolForge">
-    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-ToolForge-FFD21E?style=for-the-badge&labelColor=1a2230" alt="Hugging Face"></a>
+  <a href="https://huggingface.co/datasets/buycar/ToolForge-data">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-Source%20QA-FFD21E?style=for-the-badge&labelColor=1a2230" alt="Hugging Face"></a>
   <a href="README_zh.md">
     <img src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-%E6%96%87%E6%A1%A3-EC6708?style=for-the-badge&labelColor=1a2230" alt="中文文档"></a>
 </p>
@@ -388,7 +388,7 @@ benchmark viewer.
 
 ## Datasets
 
-🤗 [**buycar/ToolForge**](https://huggingface.co/datasets/buycar/ToolForge)
+🤗 [**buycar/ToolForge-data**](https://huggingface.co/datasets/buycar/ToolForge-data)
 
 ```bash
 python download_data.py              # HotpotQA & 2WikiMultihopQA

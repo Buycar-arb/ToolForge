@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 #: Public dataset: the raw multi-hop QA that stage 2 consumes.
-REPO_ID = os.getenv("TOOLFORGE_DATASET_REPO", "buycar/ToolForge")
+REPO_ID = os.getenv("TOOLFORGE_DATASET_REPO", "buycar/ToolForge-data")
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
@@ -37,8 +37,10 @@ DATA_DIR = ROOT / "data"
 #: current and the pre-2.0 layouts are handled, so an older dataset revision
 #: still lands in the right place.
 RELOCATIONS = {
+    "original_data": DATA_DIR / "source_qa",
     "source_qa": DATA_DIR / "source_qa",
     "labelled": DATA_DIR / "labelled",
+    # Pre-2.0 layout, still recognised.
     "Stage_2/original_data": DATA_DIR / "source_qa",
     "Stage_2/label_data": DATA_DIR / "labelled",
 }

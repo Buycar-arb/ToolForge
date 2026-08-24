@@ -10,7 +10,7 @@ toolforge convert to-jsonl data/source_qa/HotpotQA
 toolforge convert to-jsonl data/source_qa/2WikiMultihopQA
 ```
 
-🤗 [**buycar/ToolForge**](https://huggingface.co/datasets/buycar/ToolForge)
+🤗 [**buycar/ToolForge-data**](https://huggingface.co/datasets/buycar/ToolForge-data)
 
 ## What arrives
 

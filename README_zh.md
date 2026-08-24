@@ -7,8 +7,8 @@
 <p>
   <a href="https://arxiv.org/abs/2512.16149">
     <img src="https://img.shields.io/badge/arXiv-2512.16149-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv"></a>
-  <a href="https://huggingface.co/datasets/buycar/ToolForge">
-    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20%E6%95%B0%E6%8D%AE%E9%9B%86-ToolForge-FFD21E?style=for-the-badge&labelColor=1a2230" alt="Hugging Face"></a>
+  <a href="https://huggingface.co/datasets/buycar/ToolForge-data">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE-Source%20QA-FFD21E?style=for-the-badge&labelColor=1a2230" alt="Hugging Face"></a>
   <a href="README.md">
     <img src="https://img.shields.io/badge/English-README-EC6708?style=for-the-badge&labelColor=1a2230" alt="English"></a>
 </p>
@@ -371,7 +371,7 @@ Qwen3 的 Swift SFT、NQ / PopQA / Musique / Bamboogle 的 EM / F1 评测框架�
 
 ## 数据集
 
-🤗 [**buycar/ToolForge**](https://huggingface.co/datasets/buycar/ToolForge)
+🤗 [**buycar/ToolForge-data**](https://huggingface.co/datasets/buycar/ToolForge-data)
 
 ```bash
 python download_data.py              # HotpotQA 与 2WikiMultihopQA

@@ -27,7 +27,7 @@ route 不是随便标的，它取决于**问题本身的结构**。而问题结�
 
 ## 各语料的 route 分布
 
-对 🤗 `buycar/ToolForge` 的六个语料各抽样标注后实测：
+对 🤗 `buycar/ToolForge-data` 的六个语料各抽样标注后实测：
 
 | 语料 | 总条数 | 抽样 | case1→A | case2→B | case3→C | case4→D | 适合 |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -103,7 +103,7 @@ So "I want D-family data" is a decision you make when picking source data, not l
 
 ## Measured route distribution
 
-Sampled and labelled from each corpus in 🤗 `buycar/ToolForge`:
+Sampled and labelled from each corpus in 🤗 `buycar/ToolForge-data`:
 
 | corpus | records | sampled | case1→A | case2→B | case3→C | case4→D | good for |
 |---|---:|---:|---:|---:|---:|---:|---|

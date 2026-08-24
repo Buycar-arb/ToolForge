@@ -54,7 +54,7 @@ toolforge = "toolforge.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Buycar-arb/ToolForge"
-Dataset = "https://huggingface.co/datasets/buycar/ToolForge"
+Dataset = "https://huggingface.co/datasets/buycar/ToolForge-data"
 
 [tool.setuptools.packages.find]
 include = ["toolforge*"]
