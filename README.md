@@ -386,17 +386,30 @@ benchmark viewer.
 
 ---
 
-## Datasets
+## Source data
 
-🤗 [**buycar/ToolForge-data**](https://huggingface.co/datasets/buycar/ToolForge-data)
+🤗 **[buycar/ToolForge-data](https://huggingface.co/datasets/buycar/ToolForge-data)**
+
+**Raw multi-hop question answering — the input ToolForge runs on.** 257,901
+questions across six corpora from HotpotQA and 2WikiMultihopQA, in the exact
+slices used in the paper. This is *source* data, not generated data: it is what
+you feed to the pipeline, and stage 2 is the first thing that touches it.
 
 ```bash
-python download_data.py              # HotpotQA & 2WikiMultihopQA
+python download_data.py              # -> data/source_qa/
 python download_data.py --with-model # + bge-m3, for stage 1's similarity gate
 ```
 
-This is `data/source_qa/` — the raw multi-hop QA that stage 2 consumes, and the
-starting point of the whole pipeline. Three commands turn it into training data:
+| corpus | questions | question shape |
+|---|---:|---|
+| `HotpotQA/bridge_hp` | 72,991 | bridge: hop 1's answer identifies hop 2's subject |
+| `HotpotQA/comparison_hp` | 17,456 | comparison: "which of X and Y…" |
+| `2WikiMultihopQA/compositional_wiki` | 76,481 | compositional: "the Z of the Y of X" |
+| `2WikiMultihopQA/comparison_wiki` | 51,963 | comparison |
+| `2WikiMultihopQA/bridge_comparison_wiki` | 34,631 | bridge *and* comparison |
+| `2WikiMultihopQA/inference_wiki` | 4,379 | inference over family relations |
+
+From there, three commands produce training data:
 
 ```bash
 toolforge convert  to-jsonl data/source_qa/HotpotQA
@@ -405,7 +418,9 @@ toolforge generate data/labelled/output.jsonl --case case_C1 --target 100
 ```
 
 Because you run the factory rather than download its output, you can build the
-same data over *your* corpus, in *your* domain, with *your* tools.
+same data over *your* corpus, in *your* domain, with *your* tools — any corpus
+matching the schema in the [dataset card](https://huggingface.co/datasets/buycar/ToolForge-data)
+works.
 
 The four categories the pipeline produces:
 
@@ -416,7 +431,7 @@ The four categories the pipeline produces:
 | **MRST** | multi round, single tool |
 | **MRMT** | multi round, multi tool |
 
-Which corpus produces which case family is not obvious and matters a great deal —
+Which corpus yields which case family is not obvious and matters a great deal —
 [`docs/choosing-source-data.md`](docs/choosing-source-data.md) has the measured
 breakdown.
 

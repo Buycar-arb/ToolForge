@@ -369,17 +369,29 @@ Qwen3 的 Swift SFT、NQ / PopQA / Musique / Bamboogle 的 EM / F1 评测框架�
 
 ---
 
-## 数据集
+## 原始数据
 
-🤗 [**buycar/ToolForge-data**](https://huggingface.co/datasets/buycar/ToolForge-data)
+🤗 **[buycar/ToolForge-data](https://huggingface.co/datasets/buycar/ToolForge-data)**
+
+**原始多跳问答数据 —— ToolForge 的输入。** 来自 HotpotQA 与 2WikiMultihopQA 的六个语料、
+共 257,901 个问题，与论文中使用的切片完全一致。这是**原始数据，不是生成出来的数据**：
+它是你喂给流水线的东西，第二阶段是第一个碰它的环节。
 
 ```bash
-python download_data.py              # HotpotQA 与 2WikiMultihopQA
+python download_data.py              # -> data/source_qa/
 python download_data.py --with-model # 额外下载 bge-m3，用于第一阶段的相似度门控
 ```
 
-下载得到 `data/source_qa/` —— 第二阶段消费的原始多跳问答数据，也是整条流水线的起点。
-三条命令就能把它变成训练数据：
+| 语料 | 问题数 | 问题结构 |
+|---|---:|---|
+| `HotpotQA/bridge_hp` | 72,991 | 桥接：第一跳的答案决定第二跳查什么 |
+| `HotpotQA/comparison_hp` | 17,456 | 比较：「X 和 Y 哪个……」 |
+| `2WikiMultihopQA/compositional_wiki` | 76,481 | 组合：「X 的 Y 的 Z」 |
+| `2WikiMultihopQA/comparison_wiki` | 51,963 | 比较 |
+| `2WikiMultihopQA/bridge_comparison_wiki` | 34,631 | 桥接与比较混合 |
+| `2WikiMultihopQA/inference_wiki` | 4,379 | 亲属关系推理 |
+
+拿到之后，三条命令就能产出训练数据：
 
 ```bash
 toolforge convert  to-jsonl data/source_qa/HotpotQA
@@ -388,7 +400,8 @@ toolforge generate data/labelled/output.jsonl --case case_C1 --target 100
 ```
 
 因为你运行的是工厂本身而不是下载它的产物，所以你可以在**自己的**语料、**自己的**领域、
-**自己的**工具上造出同样的数据。
+**自己的**工具上造出同样的数据——任何符合
+[数据集说明](https://huggingface.co/datasets/buycar/ToolForge-data)里 schema 的语料都可以。
 
 流水线产出的四个类别：
 
