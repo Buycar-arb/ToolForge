@@ -1,7 +1,15 @@
-# Search engine configuration
+# ============================================================================
+# Retrieval backend and inference style.
+#
+#   search_method: tag       Search-R1 style, the model emits <search>...</search>
+#   search_method: function  standard tool calling against the functions below
+#
+# `url` points at the RAG server from Evaluation_Framework/rag_server
+# (start it with `bash rag_server/launch.sh`).
+# ============================================================================
 search_engine:
   type: rag_server
-  url: http://10.148.6.55:5003/retrieve
+  url: http://localhost:5003/retrieve
   timeout: 60
   max_retries: 3
 

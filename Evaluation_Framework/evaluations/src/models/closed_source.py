@@ -1,609 +1,179 @@
-"""Closed source model implementations (GPT-4, DeepSeek)."""
+"""API-served models for the evaluation harness.
 
-import os
-import json
-import time
+The original release carried four near-identical classes (OpenAI, Claude, Grok,
+DeepSeek) that differed only in one optional request field.  They are one class
+now — :class:`APIModel` — with the old names kept as aliases so existing configs
+and imports keep working.
+
+Two calling modes, matching the two inference styles in ``config/search_engines.yaml``:
+
+``generate_with_tags``
+    Search-R1 style. One HTTP call to the configured endpoint with ``stop``
+    sequences; the closing tag the server strips is appended back.
+
+``generate_with_functions``
+    Standard chat completion through the shared async client, which rotates the
+    keys in ``API_KEYS`` and retries transient failures.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import itertools
-import re
-from typing import Dict, List, Any
+import os
+import time
+from typing import Any, Dict, List
+
 import requests
 from openai import (
-    AsyncOpenAI,
     APIConnectionError,
-    RateLimitError,
     APITimeoutError,
+    AsyncOpenAI,
     InternalServerError,
+    RateLimitError,
 )
+
 from .base_model import BaseModel
 
+#: Keys for the OpenAI-compatible endpoint, comma-separated, rotated per call.
+API_KEYS = [key.strip() for key in os.getenv("API_KEYS", "").split(",") if key.strip()]
 
-# API Keys loaded from environment variable (comma-separated)
-_api_keys_raw = os.getenv("API_KEYS", "")
-API_KEYS = [k.strip() for k in _api_keys_raw.split(",") if k.strip()]
-
-# API Base URL loaded from environment variable
+#: Endpoint used by ``generate_with_functions``.
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 
-
-def find_closing_quote(text, start_pos):
-    """
-    找到字符串中对应的结束引号，考虑转义
-    """
-    i = start_pos
-    while i < len(text):
-        if text[i] == '"':
-            # 检查是否被转义
-            backslash_count = 0
-            j = i - 1
-            while j >= 0 and text[j] == '\\':
-                backslash_count += 1
-                j -= 1
-            
-            # 如果反斜杠数量是偶数，说明引号没有被转义
-            if backslash_count % 2 == 0:
-                return i
-        i += 1
-    return -1
+#: Tags whose closing half the server strips when it honours a stop sequence.
+_CLOSING_TAGS = ("search", "answer")
 
 
-def extract_messages_brutal(text):
-    """
-    暴力解析：直接提取role和content，然后重新构建JSON
-    """
-    try:
-        # 1. 提取JSON代码块
-        json_pattern = r'```json\s*(.*?)\s*```'
-        match = re.search(json_pattern, text, re.DOTALL)
-        
-        if not match:
-            print("未找到JSON代码块")
-            return None
-        
-        json_content = match.group(1).strip()
-        
-        # 2. 暴力提取每个message对象
-        messages = []
-        
-        # 简单方法：按 "role": 分割
-        parts = json_content.split('"role":')
-        
-        for i, part in enumerate(parts):
-            if i == 0:  # 第一部分通常是 { "messages": [
-                continue
-                
-            # 提取role值
-            role_match = re.search(r'^\s*"([^"]+)"', part)
-            if not role_match:
-                continue
-            role = role_match.group(1)
-            
-            # 提取content值 - 这里是关键
-            # 寻找 "content": "..." 但要处理多行和转义
-            content_pattern = r'"content":\s*"(.*?)"\s*(?=\}|,\s*\})'
-            content_match = re.search(content_pattern, part, re.DOTALL)
-            
-            if content_match:
-                content = content_match.group(1)
-                content = (content.replace('\\n', '\n')
-                                 .replace('\\r', '\r')
-                                 .replace('\\t', '\t')
-                                 .replace('\\"', '"')
-                                 .replace('\\\\', '\\'))
-                
-                # 不需要转义，直接使用原始内容
-                messages.append({
-                    "role": role,
-                    "content": content
-                })
-            else:
-                # 如果正则匹配失败，尝试手动查找
-                content_start = part.find('"content":')
-                if content_start != -1:
-                    # 找到content后的引号
-                    quote_start = part.find('"', content_start + len('"content":'))
-                    if quote_start != -1:
-                        # 找到对应的结束引号（考虑转义）
-                        quote_end = find_closing_quote(part, quote_start + 1)
-                        if quote_end != -1:
-                            content = part[quote_start + 1:quote_end]
-                            messages.append({
-                                "role": role,
-                                "content": content
-                            })
-        
-        return messages
-        
-    except Exception as e:
-        print(f"暴力解析失败: {e}")
-        return None
+def _resolve(value: str | None) -> str:
+    """Expand a ``${VAR}`` placeholder from the environment, else pass through."""
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        return os.getenv(value[2:-1], "")
+    return value or ""
 
 
-def merge_messages(parsed_messages, original_system_message):
-    """
-    合并原始消息和解析出的消息
-    
-    Args:
-        parsed_messages: 从模型输出解析出的消息列表
-        original_system_message: 原始的system消息
-    
-    Returns:
-        合并后的完整消息列表
-    """
-    try:
-        final_messages = []
-        
-        # 1. 添加原始system消息
-        if original_system_message:
-            final_messages.append(original_system_message)
-        
-        # 3. 添加解析出的新消息（通常是assistant和tool消息）
-        if parsed_messages:
-            # 过滤掉可能重复的user消息（如果解析结果中包含）
-            for msg in parsed_messages:
-                # 只添加assistant和tool类型的消息，避免重复user消息
-                if msg.get('role') in ['user', 'assistant', 'tool']:
-                    final_messages.append(msg)
-        
-        return final_messages
-        
-    except Exception as e:
-        print(f"消息合并失败: {e}")
-        return None
+def _restore_stop_tag(content: str) -> str:
+    """Put back the closing tag the API stripped when it hit a stop sequence."""
+    for tag in _CLOSING_TAGS:
+        if f"<{tag}>" in content and f"</{tag}>" not in content:
+            return content + f"</{tag}>"
+    return content
 
 
-class APICaller:
-    def __init__(
-        self,
-        model: str = "anthropic.claude-sonnet-4",
-        retry_attempts: int = 5,
-        retry_delay: int = 10
-    ):
+class AsyncChatCaller:
+    """Async chat completions with key rotation and retries."""
+
+    def __init__(self, model: str, retry_attempts: int = 15, retry_delay: int = 60) -> None:
         self.model = model
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
+        self.clients = [AsyncOpenAI(api_key=key, base_url=API_BASE_URL) for key in API_KEYS]
+        self.cycle = itertools.cycle(self.clients) if self.clients else None
+        self.lock = asyncio.Lock()
 
-        self.api_keys_info = [
-            {
-                "key": key,
-                "client": AsyncOpenAI(api_key=key, base_url=API_BASE_URL),
-                "count": 0
-            }
-            for key in API_KEYS
-        ]
-        self.client_cycler = itertools.cycle(self.api_keys_info)
-        self._lock = asyncio.Lock()
-    
-    async def generate(self, messages: list) -> str:
-        async with self._lock:
-            client_wrapper = next(self.client_cycler)
-        
-        client = client_wrapper["client"]
+    async def generate(self, messages: List[Dict[str, str]], max_tokens: int = 10000) -> str | None:
+        if not self.cycle:
+            raise RuntimeError("No API_KEYS configured — set API_KEYS in the environment.")
+
+        async with self.lock:
+            client = next(self.cycle)
 
         for attempt in range(self.retry_attempts):
             try:
-                if attempt == 0:
-                    async with self._lock:
-                        client_wrapper["count"] += 1
-
                 response = await client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=10000,
-                    temperature=0.0,
+                    model=self.model, messages=messages, max_tokens=max_tokens, temperature=0.0
                 )
                 return response.choices[0].message.content
-            except (APIConnectionError, RateLimitError, APITimeoutError, InternalServerError) as e:
+            except (APIConnectionError, RateLimitError, APITimeoutError, InternalServerError) as exc:
+                print(f"[{self.model}] attempt {attempt + 1}/{self.retry_attempts} failed: {exc}")
                 if attempt < self.retry_attempts - 1:
                     await asyncio.sleep(self.retry_delay)
-                else:
-                    return None
-            except Exception as e:
+            except Exception as exc:  # noqa: BLE001 - non-retryable, give up now
+                print(f"[{self.model}] non-retryable error: {exc}")
                 return None
         return None
 
 
-class LLMGenerator:
-    def __init__(self, model: str = "anthropic.claude-sonnet-4", retry_attempts: int = 15, retry_delay: int = 60):
-        self.api_caller = APICaller(model=model, retry_attempts=retry_attempts, retry_delay=retry_delay)
-    
-    async def call_api(self, messages: list) -> str:
-        return await self.api_caller.generate(messages)
+class APIModel(BaseModel):
+    """Any model reachable over an OpenAI-compatible HTTP API.
 
+    Recognised config keys (``config/models.yaml``)::
 
-class OpenAIModel(BaseModel):
-    """OpenAI GPT-4 implementation with new async approach."""
+        type: closed_source
+        model_name: gpt-5.1          # sent as the `model` field
+        api_key: ${OPENAI_API_KEY}   # ${VAR} is read from the environment
+        endpoint: https://.../chat/completions
+        max_tokens: 8000
+        temperature: 0
+        timeout: 60
+        thinking: {...}              # optional, forwarded verbatim
+    """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
-        self.api_key = config['api_key']
-        self.endpoint = config['endpoint']
-        self.model_name = config['model_name']
-        self.timeout = config.get('timeout', 60)
-        # Initialize the new async generator
-        self.llm_generator = LLMGenerator(
-            model=self.model_name,
-            retry_attempts=15,
-            retry_delay=60
-        )
+        self.api_key = _resolve(config.get("api_key"))
+        self.endpoint = _resolve(config.get("endpoint"))
+        self.model_name = config["model_name"]
+        self.timeout = config.get("timeout", 60)
+        #: Extended-thinking block, forwarded to the endpoint when present.
+        self.thinking = config.get("thinking") or {}
+        self.caller = AsyncChatCaller(self.model_name)
 
-    def generate_with_tags(self, prompt: str, stop_sequences: List[str] = None, **kwargs) -> str:
-        """Generate response using chat completions API with stop sequences."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+    # -- tag-based inference -------------------------------------------- #
+    def generate_with_tags(self, prompt: str, stop_sequences: List[str] | None = None, **kwargs: Any) -> str:
+        if not self.endpoint:
+            raise ValueError(
+                f"Model '{self.model_name}' needs an `endpoint` in models.yaml for tag-based inference."
+            )
 
-        # Put everthing in prompt (模仿raw text)
-        data = {
+        payload: Dict[str, Any] = {
             "model": self.model_name,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": kwargs.get('max_tokens', self.max_tokens),
-            "temperature": kwargs.get('temperature', self.temperature),
-            "stop": stop_sequences
-        }
-
-        for retry in range(3):
-            try:
-                response = requests.post(
-                    self.endpoint,  # Use the chat completions endpoint
-                    headers=headers,
-                    json=data,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-
-                # Get the response content
-                content = response.json()['choices'][0]['message']['content']
-
-                # Append the stop sequence that was triggered
-                # The API strips stop sequences, so we need to add them back
-                if stop_sequences and content:
-                    # Check for each possible unclosed tag and append the appropriate closing
-                    if '<search>' in content and '</search>' not in content:
-                        content += '</search>'
-                    elif '<answer>' in content and '</answer>' not in content:
-                        content += '</answer>'
-
-                return content
-            except Exception as e:
-                if retry == 2:
-                    raise e
-                time.sleep(2 ** retry)
-
-    def generate_with_functions(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Generate response with function/tool calling using new async approach."""
-        # Run the async method in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(self._generate_with_functions_async(messages, tools, **kwargs))
-            return result
-        finally:
-            loop.close()
-
-    async def _generate_with_functions_async(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Async implementation of function calling."""
-        try:
-            # Call the API using the new async approach
-            result = await self.llm_generator.call_api(messages)
-            
-            if result:
-                # For the evaluation framework, we need to return the result directly
-                # The result should be the model's response content
-                return {
-                    'content': result,
-                    'tool_calls': []
-                }
-            
-            # Fallback if no result
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-            
-        except Exception as e:
-            print(f"Error in async function calling: {e}")
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-
-
-class ClaudeModel(BaseModel):
-    """Claude model implementation with thinking capability and new async approach."""
-
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.api_key = config['api_key']
-        self.endpoint = config['endpoint']
-        self.model_name = config['model_name']
-        self.timeout = config.get('timeout', 60)
-        self.thinking = config.get('thinking', {})
-        # Initialize the new async generator
-        self.llm_generator = LLMGenerator(
-            model=self.model_name,
-            retry_attempts=15,
-            retry_delay=60
-        )
-
-    def generate_with_tags(self, prompt: str, stop_sequences: List[str] = None, **kwargs) -> str:
-        """Generate response using chat completions API with stop sequences."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Put everything in prompt (模仿raw text)
-        data = {
-            "model": self.model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": kwargs.get('max_tokens', self.max_tokens),
-            "temperature": kwargs.get('temperature', self.temperature),
-            "stop": stop_sequences
-        }
-
-        # Add thinking configuration if available
-        if self.thinking:
-            data["thinking"] = self.thinking
-
-        for retry in range(3):
-            try:
-                response = requests.post(
-                    self.endpoint,
-                    headers=headers,
-                    json=data,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-
-                # Get the response content
-                content = response.json()['choices'][0]['message']['content']
-
-                # Append the stop sequence that was triggered
-                if stop_sequences and content:
-                    if '<search>' in content and '</search>' not in content:
-                        content += '</search>'
-                    elif '<answer>' in content and '</answer>' not in content:
-                        content += '</answer>'
-
-                return content
-            except Exception as e:
-                if retry == 2:
-                    raise e
-                time.sleep(2 ** retry)
-
-    def generate_with_functions(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Generate response with function/tool calling using new async approach."""
-        # Run the async method in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(self._generate_with_functions_async(messages, tools, **kwargs))
-            return result
-        finally:
-            loop.close()
-
-    async def _generate_with_functions_async(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Async implementation of function calling for Claude."""
-        try:
-            # Call the API using the new async approach
-            result = await self.llm_generator.call_api(messages)
-            
-            if result:
-                # For the evaluation framework, we need to return the result directly
-                # The result should be the model's response content
-                return {
-                    'content': result,
-                    'tool_calls': []
-                }
-            
-            # Fallback if no result
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-            
-        except Exception as e:
-            print(f"Error in async function calling: {e}")
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-
-
-class GrokModel(BaseModel):
-    """Grok model implementation with new async approach."""
-
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.api_key = config['api_key']
-        self.endpoint = config['endpoint']
-        self.model_name = config['model_name']
-        self.timeout = config.get('timeout', 60)
-        # Initialize the new async generator
-        self.llm_generator = LLMGenerator(
-            model=self.model_name,
-            retry_attempts=15,
-            retry_delay=60
-        )
-
-    def generate_with_tags(self, prompt: str, stop_sequences: List[str] = None, **kwargs) -> str:
-        """Generate response using chat completions API with stop sequences."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Put everything in prompt (模仿raw text)
-        data = {
-            "model": self.model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": kwargs.get('max_tokens', self.max_tokens),
-            "temperature": kwargs.get('temperature', self.temperature),
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "temperature": kwargs.get("temperature", self.temperature),
             "stop": stop_sequences,
-            "stream": False  # Disable streaming for tag-based generation
         }
+        if self.thinking:
+            payload["thinking"] = self.thinking
 
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+        last: Exception | None = None
         for retry in range(3):
             try:
                 response = requests.post(
-                    self.endpoint,
-                    headers=headers,
-                    json=data,
-                    timeout=self.timeout
+                    self.endpoint, headers=headers, json=payload, timeout=self.timeout
                 )
                 response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return _restore_stop_tag(content) if stop_sequences and content else content
+            except Exception as exc:  # noqa: BLE001 - retried below
+                last = exc
+                if retry < 2:
+                    time.sleep(2**retry)
+        raise last if last else RuntimeError("request failed")
 
-                # Get the response content
-                content = response.json()['choices'][0]['message']['content']
-
-                # Append the stop sequence that was triggered
-                if stop_sequences and content:
-                    if '<search>' in content and '</search>' not in content:
-                        content += '</search>'
-                    elif '<answer>' in content and '</answer>' not in content:
-                        content += '</answer>'
-
-                return content
-            except Exception as e:
-                if retry == 2:
-                    raise e
-                time.sleep(2 ** retry)
-
-    def generate_with_functions(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Generate response with function/tool calling using new async approach."""
-        # Run the async method in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # -- function-calling inference ------------------------------------- #
+    def generate_with_functions(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs: Any) -> Dict:
+        """Tools are already described in the system prompt, so ``tools`` is unused."""
         try:
-            result = loop.run_until_complete(self._generate_with_functions_async(messages, tools, **kwargs))
-            return result
-        finally:
-            loop.close()
-
-    async def _generate_with_functions_async(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Async implementation of function calling for Grok."""
-        try:
-            # Call the API using the new async approach
-            result = await self.llm_generator.call_api(messages)
-            
-            if result:
-                # For the evaluation framework, we need to return the result directly
-                # The result should be the model's response content
-                return {
-                    'content': result,
-                    'tool_calls': []
-                }
-            
-            # Fallback if no result
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-            
-        except Exception as e:
-            print(f"Error in async function calling: {e}")
-            return {
-                'content': '',
-                'tool_calls': []
-            }
+            content = asyncio.run(
+                self.caller.generate(messages, max_tokens=kwargs.get("max_tokens", self.max_tokens))
+            )
+        except Exception as exc:  # noqa: BLE001 - reported, never fatal to a sweep
+            print(f"[{self.model_name}] function-calling request failed: {exc}")
+            content = None
+        return {"content": content or "", "tool_calls": []}
 
 
-class DeepSeekModel(BaseModel):
-    """DeepSeek model implementation with new async approach."""
+# Backwards-compatible names: older configs and scripts import these directly.
+OpenAIModel = ClaudeModel = GrokModel = DeepSeekModel = APIModel
 
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.api_key = config['api_key'] if not config['api_key'].startswith('${') else os.getenv(config['api_key'].replace('${', '').replace('}', ''))
-        self.endpoint = config['endpoint']
-        self.model_name = config['model_name']
-        self.timeout = config.get('timeout', 60)
-        # Initialize the new async generator
-        self.llm_generator = LLMGenerator(
-            model=self.model_name,
-            retry_attempts=15,
-            retry_delay=60
-        )
-
-    def generate_with_tags(self, prompt: str, stop_sequences: List[str] = None, **kwargs) -> str:
-        """Generate response using chat completions API with stop sequences."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Use chat completions endpoint with messages format
-        data = {
-            "model": self.model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": kwargs.get('max_tokens', self.max_tokens),
-            "temperature": kwargs.get('temperature', self.temperature),
-            "stop": stop_sequences
-        }
-
-        for retry in range(3):
-            try:
-                response = requests.post(
-                    self.endpoint,  # Use the chat completions endpoint
-                    headers=headers,
-                    json=data,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-
-                # Get the response content
-                content = response.json()['choices'][0]['message']['content']
-
-                # Append the stop sequence that was triggered
-                # The API strips stop sequences, so we need to add them back
-                if stop_sequences and content:
-                    # Check for each possible unclosed tag and append the appropriate closing
-                    if '<search>' in content and '</search>' not in content:
-                        content += '</search>'
-                    elif '<answer>' in content and '</answer>' not in content:
-                        content += '</answer>'
-
-                return content
-            except Exception as e:
-                if retry == 2:
-                    raise e
-                time.sleep(2 ** retry)
-
-    def generate_with_functions(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Generate response with function/tool calling using new async approach."""
-        # Run the async method in a new event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(self._generate_with_functions_async(messages, tools, **kwargs))
-            return result
-        finally:
-            loop.close()
-
-    async def _generate_with_functions_async(self, messages: List[Dict[str, str]], tools: List[Dict], **kwargs) -> Dict:
-        """Async implementation of function calling for DeepSeek."""
-        try:
-            # Call the API using the new async approach
-            result = await self.llm_generator.call_api(messages)
-            
-            if result:
-                # For the evaluation framework, we need to return the result directly
-                # The result should be the model's response content
-                return {
-                    'content': result,
-                    'tool_calls': []
-                }
-            
-            # Fallback if no result
-            return {
-                'content': '',
-                'tool_calls': []
-            }
-            
-        except Exception as e:
-            print(f"Error in async function calling: {e}")
-            return {
-                'content': '',
-                'tool_calls': []
-            }
+__all__ = [
+    "APIModel",
+    "AsyncChatCaller",
+    "ClaudeModel",
+    "DeepSeekModel",
+    "GrokModel",
+    "OpenAIModel",
+]

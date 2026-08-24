@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toolforge"
+version = "2.0.0"
+description = "An automated SFT data factory for LLM tool-calling"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "tool-calling", "sft", "data-synthesis", "agents", "multi-hop-qa"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# The core pipeline needs very little. Everything heavier is an extra.
+dependencies = [
+    "openai>=1.60",
+    "bm25s>=0.2",
+    "jieba>=0.42",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Native Anthropic API (claude-* models without an OpenAI-compatible gateway).
+anthropic = ["anthropic>=0.40"]
+# The visual interface.
+webui = ["gradio>=5.0"]
+# Parquet <-> JSONL conversion and dataset download.
+data = ["pandas>=2.0", "pyarrow>=14", "huggingface_hub>=0.23"]
+# Stage 1's semantic similarity gate.
+embeddings = ["sentence-transformers>=3.0", "torch>=2.0"]
+# Standard-benchmark evaluation harness.
+eval = ["pyyaml>=6.0", "requests>=2.31", "datasets>=2.18", "tqdm>=4.66"]
+# Tests.
+dev = ["pytest>=8.0", "ruff>=0.6"]
+# Everything except training, which is GPU-specific — see docs/training.md.
+all = [
+    "anthropic>=0.40",
+    "gradio>=5.0",
+    "pandas>=2.0", "pyarrow>=14", "huggingface_hub>=0.23",
+    "sentence-transformers>=3.0",
+    "pyyaml>=6.0", "requests>=2.31", "datasets>=2.18", "tqdm>=4.66",
+]
+
+[project.scripts]
+toolforge = "toolforge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Buycar-arb/ToolForge"
+Dataset = "https://huggingface.co/datasets/buycar/ToolForge"
+
+[tool.setuptools.packages.find]
+include = ["toolforge*"]
+
+[tool.setuptools.package-data]
+toolforge = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"toolforge/prompts/*" = ["E501", "W291", "W293"]  # prompt text is verbatim
+"tests/*" = ["E402"]
+# Nested `with` blocks in the views mirror the visual layout; flattening them
+# would make the UI structure harder to read, not easier.
+"toolforge/webui/*" = ["SIM117"]
