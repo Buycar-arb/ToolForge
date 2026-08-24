@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToolForge · Trajectory Comparison</title>
+<style>
+/* ============================================================ tokens */
+:root{
+  --bg:#f6f7f9; --surface:#fff; --raised:#f1f3f5; --line:#e3e6ea;
+  --ink:#101418; --muted:#697280; --faint:#98a1ad;
+  --brand:#ec6708; --brand-soft:rgba(236,103,8,.10);
+  --ok:#15803d; --ok-soft:rgba(21,128,61,.10);
+  --bad:#c0392b; --bad-soft:rgba(192,57,43,.10);
+  --think:#6d5bd0; --think-soft:rgba(109,91,208,.08);
+  --tool:#0e7490; --tool-soft:rgba(14,116,144,.08);
+  --shadow:0 1px 2px rgba(16,20,24,.06),0 8px 24px rgba(16,20,24,.04);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+html[data-theme="dark"]{
+  --bg:#0b0f14; --surface:#121821; --raised:#1a2230; --line:#26303d;
+  --ink:#e6edf3; --muted:#8b98a8; --faint:#66717f;
+  --brand:#fb8312; --brand-soft:rgba(251,131,18,.14);
+  --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+  --bad:#f87171; --bad-soft:rgba(248,113,113,.12);
+  --think:#a78bfa; --think-soft:rgba(167,139,250,.12);
+  --tool:#22d3ee; --tool-soft:rgba(34,211,238,.10);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.25);
+}
+@media (prefers-color-scheme:dark){
+  html[data-theme="auto"]{
+    --bg:#0b0f14; --surface:#121821; --raised:#1a2230; --line:#26303d;
+    --ink:#e6edf3; --muted:#8b98a8; --faint:#66717f;
+    --brand:#fb8312; --brand-soft:rgba(251,131,18,.14);
+    --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+    --bad:#f87171; --bad-soft:rgba(248,113,113,.12);
+    --think:#a78bfa; --think-soft:rgba(167,139,250,.12);
+    --tool:#22d3ee; --tool-soft:rgba(34,211,238,.10);
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--ink); height:100vh; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ============================================================ layout */
+.app{display:flex;flex-direction:column;height:100vh}
+header{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:12px 18px;background:var(--surface);border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:15px;white-space:nowrap}
+.mark{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;
+  background:linear-gradient(140deg,#fb8312,#c44c09);
+}
+.brand small{display:block;font-weight:450;font-size:11.5px;color:var(--muted)}
+.spacer{flex:1}
+
+.drop{
+  display:flex;align-items:center;gap:8px;padding:6px 10px;
+  border:1px dashed var(--line);border-radius:9px;background:var(--raised);
+  font-size:12.5px;color:var(--muted);cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.drop:hover,.drop.over{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+.drop .tag{font-weight:700;color:var(--brand)}
+.drop.loaded{border-style:solid;border-color:var(--ok);color:var(--ok)}
+.drop input{display:none}
+
+.btn{
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:8px;padding:6px 11px;font-size:12.5px;cursor:pointer;transition:.15s;
+  font-family:inherit;
+}
+.btn:hover{border-color:var(--brand);color:var(--brand)}
+.btn.on{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
+
+main{flex:1;display:flex;min-height:0}
+
+/* ============================================================ sidebar */
+aside{
+  width:310px;flex:0 0 310px;display:flex;flex-direction:column;
+  background:var(--surface);border-right:1px solid var(--line);min-height:0;
+}
+.side-head{padding:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+.search{
+  width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--raised);color:var(--ink);font:inherit;font-size:13px;
+}
+.search:focus{outline:none;border-color:var(--brand)}
+.filters{display:flex;gap:5px;flex-wrap:wrap}
+.filters .btn{padding:4px 9px;font-size:11.5px}
+
+.scoreboard{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.score{flex:1;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--raised)}
+.score .who{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--brand)}
+.score .num{font-size:19px;font-weight:650;margin-top:1px}
+.score .of{font-size:11.5px;color:var(--muted)}
+
+.list{flex:1;overflow-y:auto;padding:6px}
+.item{
+  padding:9px 11px;border-radius:9px;cursor:pointer;margin-bottom:3px;
+  border:1px solid transparent;transition:.12s;
+}
+.item:hover{background:var(--raised)}
+.item.active{background:var(--brand-soft);border-color:var(--brand)}
+.item .q{font-size:12.8px;line-height:1.45;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item .meta{display:flex;align-items:center;gap:6px;margin-top:6px}
+.item .id{font:600 10.5px var(--mono);color:var(--faint)}
+.dot{
+  font:700 9.5px/1 var(--mono);padding:3px 5px;border-radius:4px;letter-spacing:.03em;
+}
+.dot.ok{background:var(--ok-soft);color:var(--ok)}
+.dot.bad{background:var(--bad-soft);color:var(--bad)}
+
+/* ============================================================ panels */
+.panels{flex:1;display:flex;min-width:0}
+.panel{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line)}
+.panel:last-child{border-right:none}
+.panel-head{
+  display:flex;align-items:center;gap:9px;padding:10px 14px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+}
+.panel-head .who{font-weight:650;font-size:13px}
+.badge{
+  font:600 11px var(--mono);padding:3px 7px;border-radius:5px;
+  background:var(--raised);color:var(--muted);
+}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+
+.qa{padding:11px 14px;background:var(--raised);border-bottom:1px solid var(--line);font-size:12.8px}
+.qa .row{display:flex;gap:8px;margin-bottom:5px}
+.qa .row:last-child{margin-bottom:0}
+.qa .k{flex:0 0 74px;font-weight:600;color:var(--muted);font-size:11.5px;padding-top:1px}
+.qa .v{flex:1;color:var(--ink);word-break:break-word}
+.qa .v.gold{font-weight:600;color:var(--ok)}
+
+.chat{flex:1;overflow-y:auto;padding:16px 14px;min-height:0}
+.msg{margin-bottom:14px}
+.msg .role{
+  font:700 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:5px;display:flex;align-items:center;gap:6px;
+}
+.bubble{
+  border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+  background:var(--surface);box-shadow:var(--shadow);
+}
+.msg.system .bubble{background:var(--raised);color:var(--muted);font-size:12.5px}
+.msg.user .bubble{background:var(--brand-soft);border-color:transparent}
+.msg.tool .bubble{background:var(--tool-soft);border-color:transparent}
+
+.block{border-radius:8px;padding:9px 11px;margin:7px 0;font-size:13px}
+.block:first-child{margin-top:0}
+.block:last-child{margin-bottom:0}
+.block .lbl{
+  font:700 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  margin-bottom:5px;display:block;
+}
+.block.think{background:var(--think-soft)} .block.think .lbl{color:var(--think)}
+.block.call{background:var(--tool-soft)}  .block.call  .lbl{color:var(--tool)}
+.block.ans{background:var(--ok-soft)}     .block.ans   .lbl{color:var(--ok)}
+.block.ans.wrong{background:var(--bad-soft)} .block.ans.wrong .lbl{color:var(--bad)}
+.block.call pre{font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0}
+
+.passage{
+  border-left:2px solid var(--line);padding:5px 0 5px 10px;margin:6px 0;font-size:12.5px;
+}
+.passage .t{font-weight:650;color:var(--ink);margin-bottom:2px}
+.passage .c{color:var(--muted);line-height:1.55}
+
+details.raw{margin-top:8px;font-size:12px}
+details.raw summary{cursor:pointer;color:var(--faint);font-size:11.5px;user-select:none}
+details.raw pre{
+  margin-top:6px;font:11.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;
+  background:var(--raised);padding:9px;border-radius:7px;max-height:280px;overflow:auto;
+}
+
+/* ============================================================ empty */
+.empty{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:11px;padding:40px;text-align:center;color:var(--muted);
+}
+.empty .ico{font-size:38px;opacity:.6}
+.empty h2{font-size:15px;font-weight:600;color:var(--ink)}
+.empty p{font-size:13px;max-width:430px;line-height:1.65}
+.empty code{
+  font:12px var(--mono);background:var(--raised);padding:2px 6px;border-radius:5px;
+  border:1px solid var(--line);
+}
+
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+::-webkit-scrollbar-thumb:hover{background:var(--faint)}
+::-webkit-scrollbar-track{background:transparent}
+
+@media (max-width:1000px){
+  aside{width:250px;flex-basis:250px}
+  .panels{flex-direction:column}
+  .panel{border-right:none;border-bottom:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark">⚖️</div>
+      <div><span data-i18n="title">Trajectory Comparison</span>
+        <small data-i18n="sub">Two models, the same questions, side by side</small></div>
+    </div>
+
+    <label class="drop" id="dropA">
+      <span class="tag">A</span><span id="labelA" data-i18n="loadA">Drop or choose file A</span>
+      <input type="file" id="fileA" accept=".jsonl,.json,.txt">
+    </label>
+    <label class="drop" id="dropB">
+      <span class="tag">B</span><span id="labelB" data-i18n="loadB">Drop or choose file B</span>
+      <input type="file" id="fileB" accept=".jsonl,.json,.txt">
+    </label>
+
+    <div class="spacer"></div>
+    <button class="btn on" id="syncBtn" data-i18n="sync">⇅ Sync scroll</button>
+    <button class="btn" id="langBtn">中文</button>
+    <button class="btn" id="themeBtn">◐</button>
+  </header>
+
+  <main>
+    <aside>
+      <div class="side-head">
+        <input class="search" id="search" data-i18n-ph="search" placeholder="Search questions or answers…">
+        <div class="filters" id="filters">
+          <button class="btn on" data-filter="all"   data-i18n="fAll">All</button>
+          <button class="btn" data-filter="differ"   data-i18n="fDiffer">Disagree</button>
+          <button class="btn" data-filter="aOnly"    data-i18n="fAOnly">A only</button>
+          <button class="btn" data-filter="bOnly"    data-i18n="fBOnly">B only</button>
+          <button class="btn" data-filter="bothBad"  data-i18n="fBothBad">Both wrong</button>
+        </div>
+      </div>
+      <div class="scoreboard" id="scoreboard" style="display:none">
+        <div class="score"><div class="who">A</div><div class="num" id="scoreA">–</div>
+          <div class="of" data-i18n="exact">exact match</div></div>
+        <div class="score"><div class="who">B</div><div class="num" id="scoreB">–</div>
+          <div class="of" data-i18n="exact">exact match</div></div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+
+    <div class="panels" id="panels">
+      <div class="empty" id="emptyState">
+        <div class="ico">📂</div>
+        <h2 data-i18n="emptyTitle">Load two result files to begin</h2>
+        <p data-i18n="emptyBody">Each line should be a JSON object with
+          <code>sample_id</code>, <code>original_query</code>, <code>golden_answer</code>
+          and <code>messages</code> — the format written by the evaluation scripts.
+          Everything runs in your browser; nothing is uploaded.</p>
+      </div>
+      <div class="panel" id="panelA" style="display:none">
+        <div class="panel-head"><span class="who">A</span><span class="badge" id="badgeA">–</span>
+          <span class="spacer"></span><span class="badge" id="fileNameA"></span></div>
+        <div class="qa" id="qaA"></div>
+        <div class="chat" id="chatA"></div>
+      </div>
+      <div class="panel" id="panelB" style="display:none">
+        <div class="panel-head"><span class="who">B</span><span class="badge" id="badgeB">–</span>
+          <span class="spacer"></span><span class="badge" id="fileNameB"></span></div>
+        <div class="qa" id="qaB"></div>
+        <div class="chat" id="chatB"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================ i18n */
+const I18N = {
+  en:{title:"Trajectory Comparison",sub:"Two models, the same questions, side by side",
+      loadA:"Drop or choose file A",loadB:"Drop or choose file B",sync:"⇅ Sync scroll",
+      search:"Search questions or answers…",fAll:"All",fDiffer:"Disagree",fAOnly:"A only",
+      fBOnly:"B only",fBothBad:"Both wrong",exact:"exact match",
+      emptyTitle:"Load two result files to begin",
+      emptyBody:"Each line should be a JSON object with <code>sample_id</code>, <code>original_query</code>, <code>golden_answer</code> and <code>messages</code> — the format written by the evaluation scripts. Everything runs in your browser; nothing is uploaded.",
+      question:"Question",gold:"Gold answer",predicted:"Predicted",noAnswer:"(no answer tag)",
+      system:"system",user:"user",assistant:"assistant",tool:"tool",
+      think:"thinking",call:"tool call",answer:"answer",raw:"Raw content",
+      noCommon:"No sample_id appears in both files",loaded:"samples",
+      passages:"retrieved passages"},
+  zh:{title:"轨迹对比",sub:"同一批问题，两个模型并排查看",
+      loadA:"拖入或选择文件 A",loadB:"拖入或选择文件 B",sync:"⇅ 同步滚动",
+      search:"搜索问题或答案…",fAll:"全部",fDiffer:"结论不同",fAOnly:"仅 A 正确",
+      fBOnly:"仅 B 正确",fBothBad:"都错",exact:"精确匹配",
+      emptyTitle:"载入两个结果文件即可开始",
+      emptyBody:"每行一个 JSON 对象，包含 <code>sample_id</code>、<code>original_query</code>、<code>golden_answer</code> 和 <code>messages</code>——即评测脚本输出的格式。全部在浏览器本地运行，不会上传任何数据。",
+      question:"问题",gold:"标准答案",predicted:"模型答案",noAnswer:"（没有 answer 标签）",
+      system:"系统",user:"用户",assistant:"助手",tool:"工具",
+      think:"思考",call:"工具调用",answer:"回答",raw:"原始内容",
+      noCommon:"两个文件没有共同的 sample_id",loaded:"条样本",
+      passages:"检索结果"}
+};
+let lang = (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+const t = key => (I18N[lang][key] ?? I18N.en[key] ?? key);
+
+function applyLanguage(){
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-i18n]").forEach(node => {
+    node.innerHTML = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(node => {
+    node.placeholder = t(node.dataset.i18nPh);
+  });
+  document.getElementById("langBtn").textContent = lang === "zh" ? "EN" : "中文";
+  if (state.A.length && state.B.length) { renderList(); if (state.current !== null) select(state.current); }
+}
+
+/* ============================================================ state */
+const state = { A:[], B:[], current:null, filter:"all", query:"", sync:true };
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ============================================================ parsing */
+function parseJSONL(text){
+  const rows = [];
+  for (const line of text.split("\n")){
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try { rows.push(JSON.parse(trimmed)); }
+    catch { /* a stray line should not sink the whole file */ }
+  }
+  // Also accept a plain JSON array.
+  if (!rows.length){
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+    } catch { /* fall through */ }
+  }
+  return rows;
+}
+
+const normalise = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9一-鿿]/g, "");
+
+function finalAnswer(sample){
+  const messages = sample?.messages || [];
+  for (let i = messages.length - 1; i >= 0; i--){
+    if (messages[i].role !== "assistant") continue;
+    const match = /<answer>([\s\S]*?)<\/answer>/.exec(messages[i].content || "");
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+const isCorrect = sample => {
+  const predicted = finalAnswer(sample);
+  return predicted !== null && normalise(predicted) === normalise(sample.golden_answer);
+};
+
+/* ============================================================ rendering */
+function renderToolContent(content){
+  // Tool messages are numbered passages: **1**\ntitle: …\ncontent: …
+  const pattern = /\*\*(\d+)\*\*\s*\n\s*title:\s*([\s\S]*?)\n\s*content:\s*([\s\S]*?)(?=\n\*\*\d+\*\*|$)/g;
+  let match, html = "", count = 0;
+  while ((match = pattern.exec(content)) !== null){
+    count++;
+    html += `<div class="passage"><div class="t">${match[1]}. ${esc(match[2].trim())}</div>
+             <div class="c">${esc(match[3].trim())}</div></div>`;
+  }
+  if (!count) return `<div class="c">${esc(content)}</div>`;
+  return `<div class="role" style="margin-bottom:6px">${count} ${t("passages")}</div>${html}`;
+}
+
+function renderAssistant(content, gold){
+  let html = "";
+  const think = /<think>([\s\S]*?)<\/think>/.exec(content);
+  if (think) html += `<div class="block think"><span class="lbl">${t("think")}</span>${esc(think[1].trim())}</div>`;
+
+  const calls = content.match(/<tool_call>[\s\S]*?<\/tool_call>/g) || [];
+  for (const raw of calls){
+    const body = raw.replace(/<\/?tool_call>/g, "").trim();
+    let pretty = body;
+    try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch { /* keep as-is */ }
+    html += `<div class="block call"><span class="lbl">${t("call")}</span><pre>${esc(pretty)}</pre></div>`;
+  }
+
+  const answer = /<answer>([\s\S]*?)<\/answer>/.exec(content);
+  if (answer){
+    const right = normalise(answer[1]) === normalise(gold);
+    html += `<div class="block ans${right ? "" : " wrong"}"><span class="lbl">${t("answer")} ${right ? "✓" : "✗"}</span>${esc(answer[1].trim())}</div>`;
+  }
+
+  if (!html) html = esc(content);
+  html += `<details class="raw"><summary>${t("raw")}</summary><pre>${esc(content)}</pre></details>`;
+  return html;
+}
+
+function renderConversation(sample, container){
+  container.innerHTML = "";
+  if (!sample){ container.innerHTML = `<div class="empty"><div class="ico">—</div></div>`; return; }
+
+  for (const message of sample.messages || []){
+    const role = message.role;
+    const node = document.createElement("div");
+    node.className = `msg ${role}`;
+    let body;
+    if (role === "assistant")   body = renderAssistant(message.content || "", sample.golden_answer);
+    else if (role === "tool")   body = renderToolContent(message.content || "");
+    else if (role === "system") body = `<details class="raw" open><summary>${t("raw")}</summary><pre>${esc(message.content)}</pre></details>`;
+    else                        body = esc(message.content);
+    node.innerHTML = `<div class="role">${t(role) || role}</div><div class="bubble">${body}</div>`;
+    container.appendChild(node);
+  }
+}
+
+function renderPanel(side, sample){
+  const gold = sample?.golden_answer ?? "";
+  const predicted = sample ? finalAnswer(sample) : null;
+  const right = sample ? isCorrect(sample) : false;
+
+  document.getElementById(`qa${side}`).innerHTML = sample ? `
+    <div class="row"><div class="k">${t("question")}</div><div class="v">${esc(sample.original_query)}</div></div>
+    <div class="row"><div class="k">${t("gold")}</div><div class="v gold">${esc(gold)}</div></div>
+    <div class="row"><div class="k">${t("predicted")}</div>
+      <div class="v" style="color:var(--${right ? "ok" : "bad"})">${esc(predicted ?? t("noAnswer"))}</div></div>` : "";
+
+  const badge = document.getElementById(`badge${side}`);
+  badge.textContent = sample ? (right ? "✓ correct" : "✗ wrong") : "–";
+  badge.className = `badge ${sample ? (right ? "ok" : "bad") : ""}`;
+
+  renderConversation(sample, document.getElementById(`chat${side}`));
+}
+
+/* ============================================================ list */
+function commonSamples(){
+  const byIdB = new Map(state.B.map(s => [s.sample_id, s]));
+  return state.A
+    .filter(a => byIdB.has(a.sample_id))
+    .map(a => ({ id:a.sample_id, a, b:byIdB.get(a.sample_id) }));
+}
+
+function passesFilter(row){
+  const okA = isCorrect(row.a), okB = isCorrect(row.b);
+  switch (state.filter){
+    case "differ":  return okA !== okB;
+    case "aOnly":   return okA && !okB;
+    case "bOnly":   return !okA && okB;
+    case "bothBad": return !okA && !okB;
+    default:        return true;
+  }
+}
+
+function renderList(){
+  const list = document.getElementById("list");
+  const rows = commonSamples();
+
+  if (!rows.length){
+    list.innerHTML = `<div class="empty"><div class="ico">⚠️</div><p>${t("noCommon")}</p></div>`;
+    return;
+  }
+
+  const needle = state.query.toLowerCase();
+  const visible = rows.filter(row =>
+    passesFilter(row) && (!needle ||
+      String(row.a.original_query ?? "").toLowerCase().includes(needle) ||
+      String(row.a.golden_answer ?? "").toLowerCase().includes(needle)));
+
+  list.innerHTML = visible.map(row => {
+    const okA = isCorrect(row.a), okB = isCorrect(row.b);
+    return `<div class="item${row.id === state.current ? " active" : ""}" data-id="${esc(row.id)}">
+      <div class="q">${esc(row.a.original_query)}</div>
+      <div class="meta">
+        <span class="id">#${esc(row.id)}</span>
+        <span class="dot ${okA ? "ok" : "bad"}">A ${okA ? "✓" : "✗"}</span>
+        <span class="dot ${okB ? "ok" : "bad"}">B ${okB ? "✓" : "✗"}</span>
+      </div></div>`;
+  }).join("") || `<div class="empty"><div class="ico">🔍</div><p>0 / ${rows.length}</p></div>`;
+
+  list.querySelectorAll(".item").forEach(node =>
+    node.addEventListener("click", () => select(node.dataset.id)));
+
+  const board = document.getElementById("scoreboard");
+  board.style.display = "flex";
+  const pct = xs => rows.length ? (xs / rows.length * 100).toFixed(1) + "%" : "–";
+  document.getElementById("scoreA").textContent = pct(rows.filter(r => isCorrect(r.a)).length);
+  document.getElementById("scoreB").textContent = pct(rows.filter(r => isCorrect(r.b)).length);
+}
+
+function select(sampleId){
+  const row = commonSamples().find(r => String(r.id) === String(sampleId));
+  if (!row) return;
+  state.current = row.id;
+  document.getElementById("emptyState").style.display = "none";
+  document.getElementById("panelA").style.display = "flex";
+  document.getElementById("panelB").style.display = "flex";
+  renderPanel("A", row.a);
+  renderPanel("B", row.b);
+  document.querySelectorAll(".item").forEach(node =>
+    node.classList.toggle("active", String(node.dataset.id) === String(sampleId)));
+  document.getElementById("chatA").scrollTop = 0;
+  document.getElementById("chatB").scrollTop = 0;
+}
+
+/* ============================================================ loading */
+function loadFile(side, file){
+  const reader = new FileReader();
+  reader.onload = event => {
+    state[side] = parseJSONL(event.target.result);
+    const drop = document.getElementById(`drop${side}`);
+    drop.classList.add("loaded");
+    document.getElementById(`label${side}`).textContent = `${state[side].length} ${t("loaded")}`;
+    document.getElementById(`fileName${side}`).textContent = file.name;
+    if (state.A.length && state.B.length){
+      renderList();
+      const first = commonSamples()[0];
+      if (first) select(first.id);
+    }
+  };
+  reader.readAsText(file);
+}
+
+for (const side of ["A", "B"]){
+  const input = document.getElementById(`file${side}`);
+  const drop = document.getElementById(`drop${side}`);
+  input.addEventListener("change", event => {
+    if (event.target.files[0]) loadFile(side, event.target.files[0]);
+  });
+  ["dragenter", "dragover"].forEach(name =>
+    drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(name =>
+    drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", event => {
+    const file = event.dataTransfer?.files?.[0];
+    if (file) loadFile(side, file);
+  });
+}
+
+/* ============================================================ controls */
+document.getElementById("search").addEventListener("input", event => {
+  state.query = event.target.value; renderList();
+});
+
+document.getElementById("filters").addEventListener("click", event => {
+  const button = event.target.closest("[data-filter]");
+  if (!button) return;
+  state.filter = button.dataset.filter;
+  document.querySelectorAll("#filters .btn").forEach(node => node.classList.toggle("on", node === button));
+  renderList();
+});
+
+document.getElementById("langBtn").addEventListener("click", () => {
+  lang = lang === "zh" ? "en" : "zh"; applyLanguage();
+});
+
+const themeButton = document.getElementById("themeBtn");
+themeButton.addEventListener("click", () => {
+  const order = ["auto", "light", "dark"];
+  const next = order[(order.indexOf(document.documentElement.dataset.theme) + 1) % order.length];
+  document.documentElement.dataset.theme = next;
+  themeButton.textContent = { auto:"◐", light:"☀", dark:"☾" }[next];
+});
+
+const syncButton = document.getElementById("syncBtn");
+syncButton.addEventListener("click", () => {
+  state.sync = !state.sync;
+  syncButton.classList.toggle("on", state.sync);
+});
+
+(function wireSyncScroll(){
+  const a = document.getElementById("chatA"), b = document.getElementById("chatB");
+  let busy = false;
+  const mirror = (from, to) => () => {
+    if (!state.sync || busy) return;
+    busy = true;
+    const span = from.scrollHeight - from.clientHeight;
+    const ratio = span > 0 ? from.scrollTop / span : 0;
+    to.scrollTop = ratio * (to.scrollHeight - to.clientHeight);
+    requestAnimationFrame(() => { busy = false; });
+  };
+  a.addEventListener("scroll", mirror(a, b));
+  b.addEventListener("scroll", mirror(b, a));
+})();
+
+document.addEventListener("keydown", event => {
+  if (event.target.tagName === "INPUT") return;
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "j" && event.key !== "k") return;
+  const items = [...document.querySelectorAll(".item")];
+  const at = items.findIndex(node => node.classList.contains("active"));
+  const step = (event.key === "ArrowDown" || event.key === "j") ? 1 : -1;
+  const next = items[Math.min(Math.max(at + step, 0), items.length - 1)];
+  if (next){ event.preventDefault(); select(next.dataset.id); next.scrollIntoView({block:"nearest"}); }
+});
+
+applyLanguage();
+</script>
+</body>
+</html>

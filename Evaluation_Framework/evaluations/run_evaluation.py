@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ''))
 
-from src.models.closed_source import OpenAIModel, DeepSeekModel, ClaudeModel, GrokModel
+from src.models.closed_source import APIModel
 from src.models.open_source import VLLMModel
 from src.datasets.dataset_loader import BenchmarkDataset
 from src.datasets.local_dataset import LocalDataset
@@ -43,20 +43,11 @@ def initialize_model(model_name: str, config: Dict) -> Any:
     """Initialize model based on configuration."""
     model_config = config['models']['models'][model_name]
 
+    # Every API-served model goes through the same class; only locally served
+    # (vLLM) models need the other implementation.
     if model_config['type'] == 'closed_source':
-        if 'gpt' in model_name:
-            return OpenAIModel(model_config)
-        elif 'deepseek' in model_name:
-            return DeepSeekModel(model_config)
-        elif 'claude' in model_name:
-            return ClaudeModel(model_config)
-        elif 'grok' in model_name:
-            return GrokModel(model_config)
-        else:
-            # Default to OpenAI model for unknown closed source models
-            return OpenAIModel(model_config)
-    else:
-        return VLLMModel(model_config)
+        return APIModel(model_config)
+    return VLLMModel(model_config)
 
 
 def initialize_search(config: Dict, search_method: str) -> Any:

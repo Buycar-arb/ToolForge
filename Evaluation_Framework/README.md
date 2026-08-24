@@ -1,125 +1,126 @@
 # Evaluation Framework
 
-Evaluate LLMs with two search methods: tag-based (`<search>` tags) and function-based (direct function calls).
+EM / F1 on NQ, PopQA, Musique and Bamboogle, in either of the two inference
+styles a tool-calling model can be asked to use.
+
+| style | how the model searches | for |
+|-------|------------------------|-----|
+| **tag** | emits `<search>query</search>` in free text | Search-R1 style models |
+| **function** | emits a standard tool call | anything with function calling |
 
 ## Setup
 
-### 1. Install Dependencies
-
 ```bash
-pip install -r evaluations/requirements.txt
+pip install -e ".[eval]"        # from the repository root
 ```
 
-### 2. Configuration
+### 1. Start the retrieval server
 
-All configs in `evaluations/config/`:
-- **models.yaml**: Set `active_model` and API keys
-- **datasets.yaml**: Set `active_datasets`
-- **search_engines.yaml**: Set `search_method` (tag/function)
-- **prompts.yaml**: Customize prompts
-
-### 3. Start RAG Server
+Every run needs a retrieval backend. `rag_server/` is a FastAPI + FAISS server
+over the Wikipedia dump:
 
 ```bash
-cd sft_tools
-pip3 install cachebox
-pip3 install accelerate bitsandbytes datasets deepspeed==0.16.4 einops flash-attn==2.7.0.post2 isort jsonlines loralib optimum packaging peft pynvml>=12.0.0 ray[default]==2.46.0 tensorboard torch==2.6.0 torchmetrics tqdm transformers==4.51.3 transformers_stream_generator wandb wheel
-pip3 install vllm==0.8.5      # Mainly for Qwen3 model support
-pip3 install "qwen-agent[code_interpreter]"
-pip3 install llama_index bs4 pymilvus infinity_client codetiming tensordict==0.6 omegaconf torchdata==0.10.0 hydra-core easydict dill python-multipart mcp==1.9.3
-pip3 install -e . --no-deps
-pip3 install faiss-gpu-cu12          # Optional: GPU-accelerated FAISS for rag_server
-pip3 install nvidia-cublas-cu12==12.4.5.8  # Optional: fixes ray worker crash on some CUDA versions
-
-# Set HuggingFace cache directory (change to your preferred path)
-export HF_HOME=/your/path/to/hf_home
-export HF_DATASETS_CACHE=$HF_HOME/datasets
-export TRANSFORMERS_CACHE=$HF_HOME/transformers
-export TMPDIR=/your/path/to/tmp
-
-mkdir -p "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$TMPDIR"
-
-bash rag_server/launch.sh
+python rag_server/download.py          # corpus + index (large)
+bash rag_server/launch.sh              # serves http://localhost:5003/retrieve
+bash rag_server/quick_test.sh          # confirm it answers
 ```
 
-### 4. (Optional) Start vLLM Server
+Point `search_engine.url` in `evaluations/config/search_engines.yaml` at it if
+you serve it elsewhere.
 
-For open-source models:
+### 2. Serve a local model (only for `type: open_source`)
+
 ```bash
-# Replace /path/to/Qwen3-8B with your local model path or a HuggingFace model ID
-python3 -m vllm.entrypoints.openai.api_server \
+python -m vllm.entrypoints.openai.api_server \
     --model /path/to/Qwen3-8B \
-    --port 8000 \
-    --served-model-name qwen3-8b  # Must match the name registered in models.yaml
+    --port 8001 \
+    --served-model-name qwen3-8b     # must match `model_path` in models.yaml
 ```
 
-## Run Evaluation
+### 3. Credentials
 
-From the **root directory**:
+API models read their keys from the environment — `models.yaml` holds
+`${VAR}` references, never literals:
 
 ```bash
-# Tag-based search
-python evaluations/run_evaluation.py 
+export OPENAI_API_KEY=sk-…
+export OPENAI_ENDPOINT=https://api.openai.com/v1/chat/completions
+export ANTHROPIC_API_KEY=sk-ant-…
+
+# Function-calling mode additionally uses the rotating-key client:
+export API_KEYS=sk-key-1,sk-key-2
+export API_BASE_URL=https://api.openai.com/v1
 ```
 
-## Recalculate Metrics
-
-After evaluation completes, you can recalculate metrics independently:
+## Run
 
 ```bash
-# Recalculate and update metrics in-place
-python evaluations/src/metrics/metrics.py evaluations/results/gpt-4_function_20250918_104723/bamboogle_results.json
-
-# Print metrics without updating file
-python evaluations/src/metrics/metrics.py evaluations/results/gpt-4_function_20250918_104723/bamboogle_results.json --print
+cd evaluations
+python run_evaluation.py                                    # uses the config defaults
+python run_evaluation.py --model gpt-5.1 --method function --datasets bamboogle nq
+python run_evaluation.py --use_multithreading --max_workers 8
 ```
 
+Results land in `evaluations/results/<model>_<method>_<timestamp>/`:
 
-## Datasets
+```
+config.json              what was run
+<dataset>_checkpoint.jsonl   resumable progress — rerun to continue
+<dataset>_results.json   per-example predictions plus the metrics
+summary.json             metrics across all datasets
+```
 
-- **NQ**: Natural Questions
-- **PopQA**: Popular QA
-- **Musique**: Multi-hop reasoning
-- **Bamboogle**: Complex reasoning
+Recompute metrics without re-running inference:
 
-Data cached in `evaluations/data/` after first download.
-
-## Results
 ```bash
-Tag-based方式：
-  {
-      'id': str,           # 示例ID
-      'question': str,     # 原始问题
-      'gold_answer': str,  # 标准答案
-      'prediction': str,   # 模型预测
-      'response': str      # 完整响应文本
-  }
-
-  Function-based方式：
-  {
-      'id': str,           # 示例ID
-      'question': str,     # 原始问题
-      'gold_answer': str,  # 标准答案
-      'prediction': str,   # 模型预测
-      'messages': List     # 完整对话历史
-  }
+python evaluations/src/metrics/metrics.py results/<run>/bamboogle_results.json
+python evaluations/src/metrics/metrics.py results/<run>/bamboogle_results.json --print
 ```
 
-## Search Methods
+## Configuration
 
-### Tag-based
-- For Search-R1 trained models
-- Uses `<search>query</search>` tags
-- Direct text generation
+| file | what it holds |
+|------|---------------|
+| `config/models.yaml` | model definitions and `active_model` |
+| `config/datasets.yaml` | `active_datasets`, sizes, metrics, threading |
+| `config/search_engines.yaml` | retrieval endpoint, `search_method`, function schemas |
+| `config/prompts.yaml` | prompt variants per inference style |
 
-### Function-based
-- For any model supporting function/tool calling
-- Specialized search functions (food, cloth, people, location, general)
-- Direct execution without subprocess overhead
+### Adding a model
+
+Any model reachable over an OpenAI-compatible API is one YAML block — there is a
+single `APIModel` class behind all of them:
+
+```yaml
+  my-model:
+    type: closed_source
+    model_name: my-model
+    api_key: ${MY_API_KEY}
+    endpoint: https://my-gateway/v1/chat/completions
+    max_tokens: 4096
+    temperature: 0
+    timeout: 60
+```
 
 ## Metrics
 
-- **Exact Match (EM)**: Exact answer matching
-- **F1 Score**: Token-level overlap
-- **Search Stats**: Queries per question, iterations
+| metric | definition |
+|--------|------------|
+| **EM** | exact match after normalisation (lowercase, strip articles and punctuation) |
+| **F1** | token-level overlap between the predicted and gold answer |
 
+## Layout
+
+```
+evaluations/
+├─ run_evaluation.py     entry point
+├─ config/               the four YAML files above
+└─ src/
+   ├─ models/            closed_source.py (APIModel) · open_source.py (vLLM)
+   ├─ datasets/          HF hub and local JSONL loaders
+   ├─ search/            tag-based and function-based search handlers
+   ├─ inference/         the per-question inference loops
+   ├─ metrics/           EM / F1
+   └─ utils/             threading, prompts, logging
+rag_server/              FastAPI + FAISS retrieval server
+```

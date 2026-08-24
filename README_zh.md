@@ -1,538 +1,437 @@
 <div align="center">
 
-<h1>🔧 ToolForge</h1>
+<h1>🔨&nbsp; ToolForge</h1>
+
+<p><b><a href="https://arxiv.org/abs/2512.16149">ToolForge: A Data Synthesis Pipeline for Multi-Hop Search without Real-World APIs</a></b><br><sub>无需真实 API 的多跳检索数据合成流水线</sub></p>
 
 <p>
-  <a href="README.md">English</a> | <b>中文</b>
+  <a href="https://arxiv.org/abs/2512.16149">
+    <img src="https://img.shields.io/badge/arXiv-2512.16149-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv"></a>
+  <a href="https://huggingface.co/datasets/buycar/ToolForge-data">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE-Source%20QA-FFD21E?style=for-the-badge&labelColor=1a2230" alt="Hugging Face"></a>
+  <a href="README.md">
+    <img src="https://img.shields.io/badge/English-README-EC6708?style=for-the-badge&labelColor=1a2230" alt="English"></a>
 </p>
 
 <p>
-  <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/框架-Gradio%205.x-orange?logo=gradio" alt="Gradio">
-  <img src="https://img.shields.io/badge/大模型-Qwen3%20%7C%20GPT%20%7C%20Claude-green" alt="LLM">
-  <img src="https://img.shields.io/badge/推理-vLLM-purple" alt="vLLM">
-  <img src="https://img.shields.io/badge/许可证-MIT-yellow" alt="License">
+  <img src="https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/models-GPT--5.1%20%7C%20Claude%20Opus%205-ec6708" alt="Models">
+  <img src="https://img.shields.io/badge/cases-29-6d5bd0" alt="29 cases">
+  <img src="https://img.shields.io/badge/checks-9%20rules%20%2B%20LLM%20judge-0e7490" alt="Validation">
+  <img src="https://img.shields.io/badge/license-MIT-15803d" alt="MIT">
 </p>
 
-<p><em>面向大模型工具调用能力的自动化 SFT 训练数据合成流水线</em></p>
+<p>
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#工作原理">工作原理</a> ·
+  <a href="#29-种对话形态">对话形态</a> ·
+  <a href="docs/architecture.md">架构说明</a> ·
+  <a href="#引用">引用</a>
+</p>
 
 </div>
 
 ---
 
-## 目录
+让模型学会**调用**工具并不难；难的是让它学会**纠错**——察觉工具返回为空、用更好的
+参数重试、放弃一开始就选错的工具、在专用工具反复失败后回退到通用搜索。这类轨迹在
+真实语料中几乎不会出现。
 
-- [项目概述](#项目概述)
-- [流水线架构](#流水线架构)
-- [项目结构](#项目结构)
-- [快速开始](#快速开始)
-- [详细使用说明](#详细使用说明)
-- [数据格式](#数据格式)
-- [评测](#评测)
-- [技术栈](#技术栈)
+ToolForge 负责把它造出来：输入多跳问答数据，输出 `<think>` / `<tool_call>` /
+`<answer>` 格式的多轮对话，覆盖 **29 种失败与恢复形态**，且每一条都必须通过
+**9 项结构校验 + 1 次 LLM 质量评审**才会被写入训练集。
+
+```bash
+pip install -e ".[all]"
+cp .env.example .env          # 填一个 API key
+toolforge doctor              # 检查配置是否就绪
+toolforge webui               # 或者直接用命令行
+```
 
 ---
 
-## 项目概述
+## 产出的数据长什么样
 
-**ToolForge** 是一个面向**大模型工具调用能力**的端到端自动化 SFT 训练数据合成流水线，覆盖从原始多跳 QA 数据到训练就绪数据、模型微调、评测的完整工作流。
+每条样本一个记录。下面是 `case_C4`——两跳问题，第二次工具调用返回无用内容，
+模型用修正后的参数重试：
 
-本流水线旨在训练大模型（主要为 **Qwen3**）在复杂多跳问答场景下准确选择并调用工具。支持 **29 种对话 case 类型**，涵盖单轮/多轮、单工具/多工具的多种真实交互模式。
+```jsonc
+{"messages": [
+  {"role": "system",    "content": "…助手指令 + 9 个工具 schema…"},
+  {"role": "user",      "content": "Were Scott Derrickson and Ed Wood of the same nationality?"},
 
-> **数据集托管在 Hugging Face** — 所有数据集（原始数据 + 最终 SFT 训练数据）均发布于 🤗 [buycar/ToolForge](https://huggingface.co/datasets/buycar/ToolForge)。下载方式见[快速开始](#快速开始)。
+  {"role": "assistant", "content": "<think>\n这是比较类问题，需要分别查两个人的国籍。
+                                    先查 Derrickson。\n</think>\n
+                                    <tool_call>{\"name\": \"people_data_investigator\",
+                                    \"arguments\": {\"query\": \"Scott Derrickson nationality\"}}</tool_call>"},
+  {"role": "tool",      "content": "**1**\ntitle: Scott Derrickson\ncontent: … is an American director. …"},
 
-### 核心特性
+  {"role": "assistant", "content": "<think>\nDerrickson 是美国人。接着查 Ed Wood。\n</think>\n
+                                    <tool_call>{\"name\": \"people_data_investigator\",
+                                    \"arguments\": {\"query\": \"Wood\"}}</tool_call>"},
+  {"role": "tool",      "content": "**1**\ntitle: Wood carving\ncontent: … 无关内容 …"},
 
-- 🏭 **全流程自动化** — 从原始 QA 数据到验证通过的 SFT 训练数据
-- 📦 **公开数据集** — HotpotQA & 2WikiMultihopQA，托管于 HF Hub，一键下载
-- 🔀 **29 种对话类型** — A1-A4（单轮单工具）、B1-B6（单轮多工具）、C1/C3-C10（多轮单工具）、D1-D10（多轮多工具）
-- 🌐 **中英双语支持** — 同时生成中英文训练数据集
-- 🛠️ **22 个领域工具库** — 涵盖学术、医疗、地理、经济等多个领域
-- ✅ **双阶段数据验证** — 规则验证（9 项检查）+ LLM 质量评分
-- 🖥️ **Gradio Web UI** — 通过可视化界面管理完整流水线
-- 📊 **内置评测框架** — 支持 NQ、PopQA、Musique、Bamboogle 的 EM/F1 评测
+  {"role": "assistant", "content": "<think>\n刚才的检索词太宽泛，没有返回导演相关信息，
+                                    改用全名重试。\n</think>\n
+                                    <tool_call>{\"name\": \"people_data_investigator\",
+                                    \"arguments\": {\"query\": \"Ed Wood film director nationality\"}}</tool_call>"},
+  {"role": "tool",      "content": "**1**\ntitle: Ed Wood\ncontent: … was an American director …"},
 
----
-
-## 流水线架构
-
-```
-Stage_2/original_data/  ← 从 HF Hub 下载（HotpotQA & 2WikiMultihopQA）
-           │
-           ▼
-   ┌───────────────┐
-   │   第一阶段    │  工具变体生成（可选）
-   │               │  → 为工具库生成语义多样的变体
-   │               │  → BM25 + 向量相似度双重去重
-   └───────┬───────┘
-           │
-           ▼
-   ┌───────────────┐
-   │   第二阶段    │  工具选择标注
-   │               │  → LLM 标注 tool_select 和 route_select
-   │               │  → 4 种路由路径（case1–case4）
-   └───────┬───────┘
-           │
-           ▼
-   ┌───────────────┐
-   │   第三阶段    │  多轮对话生成
-   │               │  → 29 种 case 类型（A/B/C/D 组）
-   │               │  → think / tool_call / answer 格式
-   └───────┬───────┘
-           │
-           ▼
-   ┌───────────────┐
-   │   第四阶段    │  数据验证与评分
-   │               │  → 9 项规则验证
-   │               │  → LLM 质量打分（思考-行动一致性）
-   └───────┬───────┘
-           │
-           ▼
-  高质量 SFT 训练数据
-  (SRST / SRMT / MRST / MRMT)
-           │
-           ▼
-   ┌───────────────┐
-   │   模型训练    │  Swift SFT（Qwen3，4×GPU，全参数微调）
-   └───────┬───────┘
-           │
-           ▼
-   ┌───────────────┐
-   │   模型评测    │  EM/F1 on NQ / PopQA / Musique / Bamboogle
-   └───────────────┘
+  {"role": "assistant", "content": "<think>\n两人都是美国人。\n</think>\n<answer>\nyes\n</answer>"}
+]}
 ```
 
-### 对话 Case 类型说明
+有三个细节是手工难以伪造、而 ToolForge 对每条样本都能保证的：
 
-| 组别 | Case | 场景说明 |
-|------|------|----------|
-| **A 组** | A1–A4 | 单轮场景：直接回答 / 单工具调用 / 多工具调用 / 无需工具 |
-| **B 组** | B1–B6 | 反思场景：工具调用失败 → 重试 / 调整参数后重新调用 |
-| **C 组** | C1,C3–C10 | 双工具场景：顺序调用 / 并行调用 / 条件链式调用 |
-| **D 组** | D1–D10 | 复杂场景：多跳推理中动态选择工具 |
-
----
-
-## 项目结构
-
-```
-sft_tools/
-├── Stage_1/                          # 第一阶段：工具变体生成
-│   ├── generate_tool.py
-│   └── tool_prompts.py
-│
-├── Stage_2/                          # 第二阶段：工具选择标注
-│   ├── code/
-│   │   ├── llm_generate_label.py
-│   │   └── tool_prompts.py
-│   ├── original_data/                # ★ 从 HF Hub 下载后放置于此
-│   │   ├── HotpotQA/
-│   │   │   ├── bridge_hp.parquet
-│   │   │   ├── comparison_hp.parquet
-│   │   │   └── parquet_to_jsonl.py   # 使用前先转换为 JSONL
-│   │   └── 2WikiMultihopQA/
-│   │       ├── bridge_comparison_wiki.parquet
-│   │       ├── comparison_wiki.parquet
-│   │       ├── compositional_wiki.parquet
-│   │       ├── inference_wiki.parquet
-│   │       └── parquet_to_jsonl.py
-│   ├── label_data/output.jsonl       # 第二阶段标注输出（运行后自动生成）
-│   └── residue_data/output.jsonl
-│
-├── Stage_3/                          # 第三阶段：多轮对话生成
-│   ├── generate_and_judge_main.py
-│   ├── config/
-│   ├── core/                         # API 客户端 & MCP 客户端
-│   ├── processors/                   # 29 种 case 处理器
-│   ├── prompts/                      # Prompt 模板
-│   ├── services/                     # 对话生成路由 & 工具管理
-│   ├── tool_bank/tools/              # 22 个领域工具库（JSONL）
-│   └── utils/                        # BM25、文件、文本工具
-│
-├── Stage_4/                          # 第四阶段：数据验证与评分
-│   ├── config/
-│   ├── core/
-│   ├── prompts/
-│   ├── utils/
-│   └── validators/
-│
-├── ToolForge_gradio_webui/           # Gradio Web UI
-│   ├── quick_fast.py                 # 主入口
-│   ├── feature_generate_judge.py
-│   ├── feature_tool_list_manager.py
-│   └── feature_tool_variant_generator.py
-│
-├── Evaluation_Framework/             # 模型评测框架
-│   ├── evaluations/                  # 多数据集/多模型评测
-│   │   ├── config/                   # YAML 配置文件
-│   │   ├── scripts/
-│   │   └── src/                      # 数据集、推理、指标、模型
-│   └── rag_server/                   # FastAPI RAG 检索服务
-│
-├── ourbenchmark_inference_output/    # 自定义 Benchmark 评测
-│   ├── model_deploy.sh               # 用 Swift + vLLM 部署微调模型
-│   ├── our_model_eval.py             # 评测微调模型
-│   ├── open_source_model_eval.py     # 评测基座模型（对比用）
-│   ├── bm25_utils.py
-│   └── viewer_compare.html           # 可视化对比查看器
-│
-├── train/                            # 模型训练
-│   ├── train.sh                      # Swift SFT 训练脚本
-│   └── qwen3_mix/
-│       └── qwen3_think.py            # 自定义 Qwen3 Thinking 模板
-│
-├── train_and_eval_data/              # 最终训练集与评估集
-│   ├── train_data/
-│   │   ├── chinese_data/             # MRMT / MRST / SRMT / SRST（Parquet）
-│   │   └── english_data/             # MRMT / MRST / SRMT / SRST（Parquet）
-│   ├── eval_data/                    # MRMT / MRST / SRMT / SRST 评估集
-│   └── parquet_to_jsonl.py           # 转换为 JSONL 供训练使用
-│
-├── .env.example                      # 环境变量配置模板
-└── requirements.txt
-```
+- **失败的调用是真的失败。** 它的 `tool` 内容是在该条数据的**非**支撑段落上真实跑
+  BM25 得到的，干扰项是真干扰项，而不是一句 `"error"`。
+- **同一个工具不会连续出现两次同名。** 22 个领域工具库、每个约 20 个语义等价的变体，
+  每条样本随机抽取其一。模型无法靠背工具名蒙混，只能真的去读 schema。
+- **反思是被验证过的。** 评审模型会逐条检查 `<think>` 与随后动作是否一致，以及出错的
+  那一轮是否真的在下一轮被反思到。仅仅结构正确是进不了训练集的。
 
 ---
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.10+
-- 兼容 OpenAI API 的接口（GPT / Claude / 本地 vLLM 均可）
-- 支持 CUDA 的 GPU（仅训练和推理阶段需要）
-
-### 安装
+### 1. 安装
 
 ```bash
 git clone https://github.com/Buycar-arb/ToolForge.git
 cd ToolForge
-pip install -r requirements.txt
+pip install -e ".[all]"
 ```
 
-### 下载数据集
+也可以按需安装：`pip install -e .` 只装核心流水线，可选组件有
+`webui`、`anthropic`、`data`、`embeddings`、`eval`、`dev`。
 
-所有数据文件托管于 🤗 [buycar/ToolForge](https://huggingface.co/datasets/buycar/ToolForge)。
-运行项目内置脚本一键下载：
-
-```bash
-pip install huggingface_hub
-python download_data.py
-```
-
-如果还需要下载 Stage 1 所需的 **bge-m3** 嵌入模型：
-
-```bash
-python download_data.py --with-model
-```
-
-下载内容：
-- `Stage_2/original_data/` — HotpotQA & 2WikiMultihopQA 原始数据（供第二阶段使用）
-- `train_and_eval_data/` — 最终 SFT 训练集和评测集（Parquet 格式）
-
-### 配置环境变量
+### 2. 配置
 
 ```bash
 cp .env.example .env
-# 用编辑器打开 .env，填写 API key 和接口地址
 ```
 
-运行任意脚本前加载环境变量：
+一个 key 就够：
 
 ```bash
-export $(grep -v '^#' .env | xargs)
+OPENAI_API_KEY=sk-…              # 多个用逗号分隔，程序会自动轮换
+GENERATION_MODEL=gpt-5.1         # 负责生成对话
+JUDGE_MODEL=gpt-5.1              # 负责质量评审
 ```
 
-| 环境变量 | 说明 | 示例 |
-|---------|------|------|
-| `API_KEYS` | API 密钥列表，逗号分隔 | `sk-key1,sk-key2` |
-| `API_BASE_URL` | API 接口地址 | `https://api.openai.com/v1` |
-| `DEFAULT_MODEL` | 数据生成模型 | `gpt-4.1` |
-| `JUDGE_MODEL` | 质量验证模型 | `gpt-4.1` |
-| `SENTENCE_TRANSFORMER_MODEL_PATH` | bge-m3 模型本地路径（仅第一阶段） | `./models/bge-m3` |
-
-### 启动 Web UI
-
-所有脚本**必须从项目根目录**（`sft_tools/`）运行：
+也原生支持 Anthropic：
 
 ```bash
-cd sft_tools
-export $(grep -v '^#' .env | xargs)
-python ToolForge_gradio_webui/quick_fast.py
+ANTHROPIC_API_KEY=sk-ant-…
+JUDGE_MODEL=claude-opus-5        # 供应商由模型名自动推断
 ```
 
-在浏览器中打开 `http://localhost:7860`，界面包含三个 Tab：
-1. **工具变体生成** — 第一阶段
-2. **工具标注** — 第二阶段
-3. **数据生成与校验** — 第三+四阶段
+供应商根据模型名判断：`claude-*` 走 Anthropic 原生 Messages API，其余走
+OpenAI 兼容接口。需要时可用前缀强制指定——`openai:claude-sonnet-5` 表示通过
+网关调用 Claude，`anthropic:claude-opus-5` 表示强制走原生接口。把
+`OPENAI_BASE_URL` 指向 Azure、vLLM、OpenRouter 或自建网关，它们提供的任何模型
+都可以直接使用。
+
+```bash
+toolforge doctor
+```
+
+会明确告诉你还缺什么。
+
+> 当前各家模型在 API 层面并不通用——GPT-5 不接受 `max_tokens`，Anthropic SDK 移除了
+> `temperature`，不同模型对「是否给 JSON 加代码块围栏」的处理也不一致。ToolForge 会
+> 自动协商这三件事，具体原理见 [`docs/models.md`](docs/models.md)。
+
+### 3. 准备数据
+
+```bash
+python download_data.py
+toolforge convert to-jsonl data/source_qa/HotpotQA
+```
+
+### 4. 运行
+
+<table>
+<tr><th align="left" width="50%">图形界面</th><th align="left" width="50%">命令行</th></tr>
+<tr valign="top"><td>
+
+```bash
+toolforge webui
+```
+
+打开 `http://localhost:7860`，共五个标签页：
+
+- **Overview** — 配置就绪检查清单
+- **Tool bank** — 浏览工具库、编辑 `TOOL_LIST`、运行第一阶段
+- **Label** — 第二阶段，带实时进度
+- **Generate** — 第三、四阶段
+- **Data** — 浏览任意输出文件、重跑校验
+
+</td><td>
+
+```bash
+# 第二阶段 —— 工具标注
+toolforge label \
+  data/source_qa/HotpotQA/bridge_hp.jsonl \
+  output/labelled/output.jsonl --limit 200
+
+# 第三 + 四阶段 —— 生成与校验
+toolforge generate output/labelled/output.jsonl \
+  --case case_C1 --case case_D4 --target 100
+```
+
+</td></tr>
+</table>
+
+建议先用 `--limit 20 --target 3` 跑一小批，确认产出符合预期再放量。
 
 ---
 
-## 详细使用说明
+## 工作原理
 
-> 所有脚本必须从**项目根目录**（`sft_tools/`）运行，以保证 Python 包导入路径正确解析。
-
-### 第一阶段：工具变体生成（可选）
-
-第一阶段为工具库生成语义多样的变体。**如果使用内置的 22 个工具库，可以跳过此阶段。**
-
-如需扩充工具库，先下载 bge-m3 嵌入模型：
-
-```bash
-python download_data.py --with-model
+```
+  data/source_qa/            原始多跳问答（HotpotQA 格式）
+         │
+         ▼
+  ┌──────────────┐  第二阶段 · 标注
+  │  labeling    │  → 这个问题该用什么工具？需要几轮？
+  └──────┬───────┘     写入 reasoning · tool_select · route_select
+         │
+         ▼
+  ┌──────────────┐  第三阶段 · 生成                         ┌───────────────┐
+  │  dialogue    │  1. 规划工具调用轨迹                     │  tool_bank/   │
+  │              │  2. 检索真实干扰段落              ◀──────│  22 个工具库  │
+  │              │  3. 撰写多轮对话                        │  每个约 20 变体│
+  └──────┬───────┘  4. 组装成记录                          └───────────────┘
+         │
+         ▼
+  ┌──────────────┐  第四阶段 · 校验
+  │  validation  │  9 项规则校验  →  rule_score 0 或 1
+  │  judge       │  LLM 质量评审  →  gpt_score  0 或 1
+  └──────┬───────┘  只有 2/2 会被保留
+         │
+         ├──▶  output/data/case_XX.jsonl     训练集
+         └──▶  output/scores/case_XX.jsonl   每次尝试的评分与原因
 ```
 
-打开 `Stage_1/generate_tool.py`，配置以下变量：
+**第一阶段**是可选的，独立于上述循环：它通过改写工具定义来扩充工具库，只有
+**语义足够接近**（余弦相似度高于阈值）且**措辞足够不同**（BM25 相似度低于阈值）
+的变体才会被保留。
 
-- **文件顶部**：`MODEL = "gpt-4"` — 用于生成的模型名
-- **`main()` 内**：`target = 20` — 每个工具生成的变体数量
-- **`main()` 内**：`output_file` — 由环境变量 `OUTPUT_FILE` 控制（默认 `./output/tool_variants.jsonl`）
+### 9 项校验
 
-运行：
+| # | 校验内容 |
+|:-:|---------|
+| 1 | 角色序列符合该 case 的预期模式 |
+| 2 | assistant 轮次为 `<think>` + `<tool_call>`，最后一轮以 `<answer>` 收尾 |
+| 3 | `system` / `user` / `tool` 消息内容非空 |
+| 4 | 最终 `<answer>` 与标准答案一致 |
+| 5 | 每条 `tool` 消息**精确**还原对应的段落集合——不许编造，不许遗漏 |
+| 6 | 重试时只能修改 schema 中标记为 `required` 的参数 |
+| 7 | 用到的支撑段落与原始 `supporting_facts` 一致 |
+| 8 | 实际调用的工具与第二阶段标注一致 |
+| 9 | 每次工具调用的名称和参数都在 system prompt 提供的 schema 范围内 |
 
-```bash
-python -m Stage_1.generate_tool
+每一次尝试——无论保留还是丢弃——都会带着原因写入评分文件，因此产出率是可核查的：
+
 ```
+### Run complete
+**312** samples kept from **604** attempts — overall yield **51.7%**
+
+| case      | kept | target | attempts | yield |
+|-----------|------|--------|----------|-------|
+| ✅ case_C1 | 100  | 100    | 173      | 57.8% |
+| ✅ case_D4 | 100  | 100    | 210      | 47.6% |
+
+**Most common rejection reasons**
+- `142×` 5. Tool-RAG consistency check failed
+- ` 88×` 2. Assistant content format validation failed
+```
+
+> 原始版本中有两项校验实际上从未生效。为保证论文数据可复现，默认行为保持不变，
+> 但都提供了开关，详见 [`docs/behaviour-notes.md`](docs/behaviour-notes.md)。
 
 ---
 
-### 第二阶段：工具选择标注
+## 29 种对话形态
 
-**先从 HF Hub 下载数据集**（见[下载数据集](#下载数据集)），然后将 Parquet 转换为 JSONL：
+按「需要几轮」和「每轮调用几次」分为四族：
+
+| 族 | 形态 | 对应 case |
+|:--:|------|-----------|
+| **A** | 单轮，每次尝试调用一次 | `A1`–`A4` |
+| **B** | 单轮，每次尝试调用多次 | `B1`–`B6` |
+| **C** | 双轮，每轮调用一次 | `C1`、`C3`–`C10` |
+| **D** | 双轮，某轮调用多次 | `D1`–`D10` |
+
+同一族内部的差异在于**失败方式**：调用返回为空后用修正参数重试、一开始选错工具、
+连续三次失败后回退到通用搜索、或者两跳问题只用一次调用就答完。
 
 ```bash
-# HotpotQA
-cd Stage_2/original_data/HotpotQA
-python parquet_to_jsonl.py
-# 输出：bridge_hp.jsonl, comparison_hp.jsonl
-
-# 2WikiMultihopQA
-cd ../2WikiMultihopQA
-python parquet_to_jsonl.py
-# 输出：bridge_comparison_wiki.jsonl, comparison_wiki.jsonl, ...
+toolforge cases                     # 完整表格
+toolforge cases --case case_C9      # 查看单个 case，含推理流程
 ```
 
-然后打开 `Stage_2/code/llm_generate_label.py`，修改顶部的路径配置：
+每个 case 都是一条数据声明而非一个类，整套分类体系集中在一个文件里
+[`toolforge/stages/cases.py`](toolforge/stages/cases.py)：
 
 ```python
-input_file  = "Stage_2/original_data/HotpotQA/bridge_hp.jsonl"
-output_file = "Stage_2/label_data/output.jsonl"
+_spec("case_C9", "C", (GOLD_ONLY, THREE_STRIKES),
+      {"gold_content_1": "gold@1", "gold_content_2": "gold@2",
+       "error_content_1": "bad1@2", "error_content_2": "bad2@2", "error_content_3": "bad3@2"},
+      ("gold@1", "bad1@2", "bad2@2", "bad3@2", "gold@2"),
+      fallback=True, argument_check=(2, 3),
+      description="Second hop fails three times, then falls back to general search.")
 ```
 
-从项目根目录运行：
-
-```bash
-python -m Stage_2.code.llm_generate_label
-```
-
-脚本会为每条样本标注 `tool_select`（调用哪个工具）和 `route_select`（case 类型：case1–case4）。
+新增第 30 种形态只需在这里加一条，再补上它的 prompt 和 flow——测试会自动覆盖它。
 
 ---
 
-### 第三+四阶段：对话生成与验证
+## 目录结构
 
-打开 `Stage_3/generate_and_judge_main.py`，修改 `main()` 函数中的配置：
+```
+toolforge/               主包，所有可导入代码
+├─ config.py             全部可调参数，从 .env 解析
+├─ llm.py                统一异步客户端：供应商路由、密钥轮换、退避重试
+├─ toolbank.py           读取工具库；为每条数据采样工具集合
+├─ bm25.py               生成真实干扰段落的检索
+├─ convert.py            Parquet ↔ JSONL
+├─ cli.py                `toolforge` 命令
+├─ stages/
+│  ├─ cases.py           ★ 29 种形态，以数据形式声明
+│  ├─ dialogue.py        ★ 生成引擎
+│  ├─ validation.py      9 项规则校验
+│  ├─ judge.py           LLM 评审
+│  ├─ pipeline.py        生成 → 校验 → 评分 主循环
+│  ├─ labeling.py        第二阶段
+│  └─ variants.py        第一阶段
+├─ prompts/              全部 prompt，按用途分组
+└─ webui/                Gradio 前端
+
+tool_bank/               22 个领域工具库（JSONL，每个约 20 个变体）
+data/                    数据集（下载得到）
+tests/                   离线测试，无需 API key 和网络
+viewer/compare.html      并排轨迹对比页面，单文件自包含
+Evaluation_Framework/    NQ / PopQA / Musique / Bamboogle 上的 EM / F1
+train/                   Swift SFT 训练脚本
+docs/                    架构 · 模型 · 行为说明 · 迁移指南
+```
+
+---
+
+## 作为库调用
 
 ```python
-c_cases_config = {
-    'case_C1': (
-        100,                                       # 目标生成数量
-        "output/validated/case_C1.jsonl",          # 验证通过数据的输出路径
-        "output/scores/score_C1.jsonl"             # 评分结果输出路径
-    ),
-    # 可继续添加其他 case...
-}
+import asyncio
+from toolforge import CaseJob, Pipeline, load_records
 
-base_config = {
-    'input_file': "Stage_2/label_data/output.jsonl",  # 第二阶段的输出
-}
+records = load_records("output/labelled/output.jsonl")
+jobs = [CaseJob("case_C1", target=100,
+                data_output="output/data/case_C1.jsonl",
+                score_output="output/scores/case_C1.jsonl")]
+
+results = asyncio.run(Pipeline().run(records, jobs, on_event=print))
+print(results["case_C1"].summary())
 ```
 
-运行：
+也可以逐条生成：
 
-```bash
-python -m Stage_3.generate_and_judge_main
+```python
+from toolforge import DialogueGenerator, SourceRecord, validate
+
+record = SourceRecord.parse(raw_stage2_row)
+sample = await DialogueGenerator().generate(record, "case_C1")
+print(validate(sample.to_record(), "case_C1").passed)
 ```
-
-评分规则：
-- **2 / 2** — 规则验证全部通过 + LLM 质量检查通过 → 保存到训练数据
-- **< 2** — 过滤淘汰
 
 ---
 
-### 模型训练
+## 测试
 
-安装 Swift：
-
-```bash
-pip install ms-swift
-```
-
-编辑 `train/train.sh` 设置模型路径和数据路径，然后运行：
+测试用脚本化的假模型驱动真实引擎和真实校验，因此不需要 API key，也不需要联网：
 
 ```bash
-cd train
-bash train.sh
+pip install -e ".[dev]"
+pytest
 ```
 
-训练核心配置：
-- 模型：Qwen3 全参数微调
-- 最大序列长度：12,000 tokens
-- 精度：BF16 + Flash Attention 2
-- 优化器：DeepSpeed ZeRO-2
+每次运行都会把 29 种形态全部生成并校验一遍——分桶、顺序、渲染、校验中任何一处
+回退都会立刻暴露。
 
 ---
 
-## 数据格式
+## 训练与评测
 
-### 输入数据（第二阶段）
+两者都依赖 GPU 环境，单独记录在 [`docs/training.md`](docs/training.md)：
+Qwen3 的 Swift SFT、NQ / PopQA / Musique / Bamboogle 的 EM / F1 评测框架，
+以及自定义 benchmark 的并排对比查看器。
 
-`Stage_2/original_data/` 中的数据遵循 HotpotQA 格式：
+---
 
-```json
-{
-  "_id": "5a8b57f25542995d1e6f1371",
-  "question": "Were Scott Derrickson and Ed Wood of the same nationality?",
-  "answer": "yes",
-  "type": "comparison",
-  "level": "hard",
-  "context": [
-    ["Scott Derrickson", ["Scott Derrickson (born 1966) is an American director..."]],
-    ["Ed Wood", ["Edward Davis Wood Jr. (October 10, 1924) was an American director..."]]
-  ],
-  "supporting_facts": [
-    ["Scott Derrickson", 0],
-    ["Ed Wood", 0]
-  ]
-}
+## 原始数据
+
+🤗 **[buycar/ToolForge-data](https://huggingface.co/datasets/buycar/ToolForge-data)**
+
+**原始多跳问答数据 —— ToolForge 的输入。** 来自 HotpotQA 与 2WikiMultihopQA 的六个语料、
+共 257,901 个问题，与论文中使用的切片完全一致。这是**原始数据，不是生成出来的数据**：
+它是你喂给流水线的东西，第二阶段是第一个碰它的环节。
+
+```bash
+python download_data.py              # -> data/source_qa/
+python download_data.py --with-model # 额外下载 bge-m3，用于第一阶段的相似度门控
 ```
 
-### 训练数据分类
+| 语料 | 问题数 | 问题结构 |
+|---|---:|---|
+| `HotpotQA/bridge_hp` | 72,991 | 桥接：第一跳的答案决定第二跳查什么 |
+| `HotpotQA/comparison_hp` | 17,456 | 比较：「X 和 Y 哪个……」 |
+| `2WikiMultihopQA/compositional_wiki` | 76,481 | 组合：「X 的 Y 的 Z」 |
+| `2WikiMultihopQA/comparison_wiki` | 51,963 | 比较 |
+| `2WikiMultihopQA/bridge_comparison_wiki` | 34,631 | 桥接与比较混合 |
+| `2WikiMultihopQA/inference_wiki` | 4,379 | 亲属关系推理 |
 
-| 类别 | 说明 |
+拿到之后，三条命令就能产出训练数据：
+
+```bash
+toolforge convert  to-jsonl data/source_qa/HotpotQA
+toolforge label    data/source_qa/HotpotQA/bridge_hp.jsonl data/labelled/output.jsonl
+toolforge generate data/labelled/output.jsonl --case case_C1 --target 100
+```
+
+因为你运行的是工厂本身而不是下载它的产物，所以你可以在**自己的**语料、**自己的**领域、
+**自己的**工具上造出同样的数据——任何符合
+[数据集说明](https://huggingface.co/datasets/buycar/ToolForge-data)里 schema 的语料都可以。
+
+流水线产出的四个类别：
+
+| 类别 | 含义 |
 |------|------|
-| **SRST** | 单轮单工具（Single-Round Single-Tool） |
-| **SRMT** | 单轮多工具（Single-Round Multi-Tool） |
-| **MRST** | 多轮单工具（Multi-Round Single-Tool） |
-| **MRMT** | 多轮多工具（Multi-Round Multi-Tool） |
+| **SRST** | 单轮单工具 |
+| **SRMT** | 单轮多工具 |
+| **MRST** | 多轮单工具 |
+| **MRMT** | 多轮多工具 |
 
-最终训练数据以 Parquet 格式存储于 `train_and_eval_data/train_data/`（中英文各一份）。
+哪个语料能产出哪一族对话，既不直观又很关键——实测分布见
+[`docs/choosing-source-data.md`](docs/choosing-source-data.md)。
 
-### SFT 对话格式
+---
 
-每条训练样本遵循 `think / tool_call / observation / answer` 多轮结构：
+## 引用
 
-```json
-{
-  "messages": [
-    {"role": "system",    "content": "...工具定义..."},
-    {"role": "user",      "content": "Scott Derrickson 和 Ed Wood 是同一国籍吗？"},
-    {"role": "assistant", "content": "<think>需要查两人的国籍。</think>\n<tool_call>{\"name\": \"general_information_search\", \"arguments\": {\"query\": \"Scott Derrickson 国籍\"}}</tool_call>"},
-    {"role": "tool",      "content": "Scott Derrickson 是美国电影导演..."},
-    {"role": "assistant", "content": "<think>Derrickson 是美国人，再查 Ed Wood。</think>\n<tool_call>{\"name\": \"general_information_search\", \"arguments\": {\"query\": \"Ed Wood 国籍\"}}</tool_call>"},
-    {"role": "tool",      "content": "Ed Wood 是美国导演和编剧..."},
-    {"role": "assistant", "content": "<think>两人都是美国人，国籍相同。</think>\n是"}
-  ]
+如果 ToolForge 对你的研究有帮助，欢迎引用：
+
+```bibtex
+@article{chen2025toolforge,
+  title={ToolForge: A Data Synthesis Pipeline for Multi-Hop Search without Real-World APIs},
+  author={Chen, Hao and Hu, Zhexin and Chai, Jiajun and Yang, Haocheng and He, Hang and Wang, Xiaohan and Lin, Wei and Wang, Luhang and Yin, Guojun and others},
+  journal={arXiv preprint arXiv:2512.16149},
+  year={2025}
 }
 ```
-
----
-
-## 评测
-
-### 标准基准测试
-
-完整配置请参阅 `Evaluation_Framework/README.md`。快速启动：
-
-```bash
-cd Evaluation_Framework/evaluations
-python run_evaluation.py --config config/models.yaml --dataset nq --search_mode tag
-```
-
-支持两种推理模式：
-- **标签式推理**（`<search>query</search>`）— Search-R1 风格
-- **Function calling** — 标准 OpenAI 函数调用格式
-
-| 指标 | 说明 |
-|------|------|
-| **EM** | 精确匹配（Exact Match）— 标准化后严格字符串相等 |
-| **F1** | Token 级 F1 — 预测答案与标准答案的词级重叠度 |
-
-### 自定义 Benchmark 评测
-
-在自定义数据上对比微调模型与基座模型的表现。
-
-#### 第一步 — 部署微调模型
-
-编辑 `ourbenchmark_inference_output/model_deploy.sh`：
-
-```bash
-CUDA_VISIBLE_DEVICES="0,1,2,3" swift deploy \
-    --model /path/to/your/checkpoint \    # ← 修改为你的检查点路径
-    --infer_backend vllm \
-    --tensor_parallel_size 4 \
-    --max_new_tokens 8192 \
-    --served_model_name history-8B
-```
-
-```bash
-cd ourbenchmark_inference_output
-bash model_deploy.sh
-# 模型以 "history-8B" 为名在 http://0.0.0.0:8000/v1 提供服务
-```
-
-#### 第二步 — 评测微调模型
-
-打开 `our_model_eval.py`，修改顶部的路径：
-
-```python
-input_path  = "path/to/stage34_validated_output.jsonl"
-output_path = "path/to/our_model_results.jsonl"
-```
-
-```bash
-cd ourbenchmark_inference_output
-python our_model_eval.py
-```
-
-#### 第三步 — 评测基座模型（对比用）
-
-```bash
-export API_KEYS=sk-your-key
-export API_BASE_URL=https://api.openai.com/v1
-```
-
-打开 `open_source_model_eval.py`，设置 `input_path`、`output_path` 和 `APICaller(model="...")` 中的模型名，然后运行：
-
-```bash
-python open_source_model_eval.py
-```
-
-#### 第四步 — 可视化对比结果
-
-在浏览器中打开 `viewer_compare.html`，加载两个结果文件，逐条对比模型输出。
-
----
-
-## 技术栈
-
-| 类别 | 技术 / 框架 |
-|------|------------|
-| **LLM API** | OpenAI SDK（AsyncOpenAI）、GPT-4.1、Claude-sonnet、DeepSeek、Grok |
-| **训练框架** | [Swift（ModelScope）](https://github.com/modelscope/ms-swift)、Transformers、DeepSpeed、Flash-Attention 2 |
-| **推理部署** | vLLM |
-| **检索 / RAG** | bm25s、SentenceTransformer（bge-m3）、FAISS |
-| **工具协议** | MCP（Model Context Protocol） |
-| **数据格式** | JSONL、Parquet（pyarrow）、HuggingFace Datasets |
-| **Web UI** | Gradio 5.x |
-| **API 服务** | FastAPI |
-| **异步并发** | asyncio、aiohttp |
-| **训练监控** | Weights & Biases、TensorBoard |
 
 ---
 
 <div align="center">
-
-[⬆ 回到顶部](#)
-
+<sub><a href="https://arxiv.org/abs/2512.16149">论文</a> · <a href="docs/architecture.md">架构说明</a> · <a href="docs/models.md">模型说明</a> · <a href="docs/behaviour-notes.md">行为说明</a> · <a href="README.md">English</a><br>MIT 许可证</sub>
 </div>
