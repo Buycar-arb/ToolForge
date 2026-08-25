@@ -179,6 +179,10 @@ Opens `http://localhost:7860`. Five tabs:
 - **Generate** — stages 3 + 4
 - **Data** — browse any output, re-run the checks
 
+Loopback access stays anonymous. Before using `--share` or a non-loopback
+`--host`, set `TOOLFORGE_WEBUI_USERNAME` and `TOOLFORGE_WEBUI_PASSWORD`;
+startup fails closed when either credential is missing.
+
 </td><td>
 
 ```bash

@@ -410,7 +410,7 @@ function renderConversation(sample, container){
     else if (role === "tool")   body = renderToolContent(message.content || "");
     else if (role === "system") body = `<details class="raw" open><summary>${t("raw")}</summary><pre>${esc(message.content)}</pre></details>`;
     else                        body = esc(message.content);
-    node.innerHTML = `<div class="role">${t(role) || role}</div><div class="bubble">${body}</div>`;
+    node.innerHTML = `<div class="role">${esc(t(role) || role)}</div><div class="bubble">${body}</div>`;
     container.appendChild(node);
   }
 }

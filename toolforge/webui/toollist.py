@@ -8,6 +8,7 @@ This module is what the Web UI's *Tool bank* tab edits.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -22,6 +23,23 @@ _BLOCK = re.compile(r'TOOL_LIST\s*=\s*"""(.*?)"""', re.DOTALL)
 
 #: Stage 2's prompts use a full-width colon between name and description.
 SEPARATOR = "："
+_SOURCE_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(32), 127)}
+_SOURCE_ESCAPES.update({ord("\n"): "\n", ord("\\"): r"\\", ord('"'): r"\x22"})
+
+
+def _decode_block(content: str) -> str:
+    """Return the value represented by a triple-quoted source block."""
+    try:
+        value = ast.literal_eval(f'"""{content}"""')
+    except (SyntaxError, ValueError):
+        # Keep the reader tolerant of a hand-edited, temporarily invalid block.
+        return content
+    return value if isinstance(value, str) else content
+
+
+def _encode_block(value: str) -> str:
+    """Encode arbitrary text for a double-triple-quoted Python literal."""
+    return value.translate(_SOURCE_ESCAPES)
 
 
 def read_tool_list(path: Path | None = None) -> list[str]:
@@ -30,9 +48,10 @@ def read_tool_list(path: Path | None = None) -> list[str]:
     match = _BLOCK.search(source)
     if not match:
         return []
+    content = _decode_block(match.group(1))
     return [
         line.split(SEPARATOR, 1)[0].strip()
-        for line in match.group(1).strip().splitlines()
+        for line in content.strip().splitlines()
         if SEPARATOR in line
     ]
 
@@ -49,11 +68,14 @@ def write_tool_list(names: list[str], path: Path | None = None) -> tuple[bool, s
         return False, t("toollist.not_in_bank", names=", ".join(missing))
 
     body = "\n".join(f"{name}{SEPARATOR}{descriptions[name]}" for name in names)
+    literal = f'TOOL_LIST = """\n{_encode_block(body)}\n"""'
     source = target.read_text(encoding="utf-8")
     if not _BLOCK.search(source):
         return False, t("toollist.no_definition", file=target)
 
-    target.write_text(_BLOCK.sub(f'TOOL_LIST = """\n{body}\n"""', source, count=1), encoding="utf-8")
+    # A callback keeps backslashes in the generated literal out of re.sub's
+    # replacement-string grammar (for example, ``\g<1>`` must remain data).
+    target.write_text(_BLOCK.sub(lambda _match: literal, source, count=1), encoding="utf-8")
     return True, t("toollist.saved", count=len(names), file=target.name)
 
 

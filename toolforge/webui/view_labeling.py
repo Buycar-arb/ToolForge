@@ -74,14 +74,15 @@ def build() -> None:
     with gr.Accordion(t("label.inspect"), open=False):
         file_inspector(DEFAULT_OUTPUT, label=t("label.inspect.label"))
 
-    buffer = LogBuffer()
-
     def describe(path: str) -> str:
         from toolforge.webui.components import _describe
 
         return _describe(path) if path else t("label.preview")
 
     def launch(inp, out, residue, model_id, temp, tokens, count, workers, force_single):
+        # A callback invocation belongs to one browser request/session.  Do not
+        # share its mutable log deque with concurrent users.
+        buffer = LogBuffer()
         if not inp or not Path(inp).is_file():
             yield guard(t("label.no_input", path=inp))
             return

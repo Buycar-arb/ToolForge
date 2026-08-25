@@ -97,10 +97,10 @@ def build() -> None:
     with gr.Accordion(t("gen.cases_accordion"), open=False):
         gr.Markdown(summary_table(), elem_classes=["tf-body"])
 
-    buffer = LogBuffer()
-
     def launch(inp, out_dir, case_ids, per_case, raw_config, gen_model, jdg_model,
                temp, tokens, workers, pause, vmin, vmax, strict_refs, strict_ans):
+        # Keep streamed logs private to this callback invocation.
+        buffer = LogBuffer()
         if not inp or not Path(inp).is_file():
             yield guard(t("gen.no_input", path=inp))
             return

@@ -170,6 +170,9 @@ toolforge webui
 - **Generate** — 第三、四阶段
 - **Data** — 浏览任意输出文件、重跑校验
 
+仅回环地址访问时仍无需登录。使用 `--share` 或非回环 `--host` 前，必须设置
+`TOOLFORGE_WEBUI_USERNAME` 和 `TOOLFORGE_WEBUI_PASSWORD`；任一凭据缺失时服务会拒绝启动。
+
 </td><td>
 
 ```bash

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -88,6 +89,10 @@ class ValidationOptions:
     strict_final_answer_format: bool = False
     #: Actually run check 7 (it read the wrong record slots originally).
     strict_reference_check: bool = False
+    #: Reject a retry that changes no parameter at all (check 6). Off by default
+    #: to reproduce the published yield; on, it catches an incoherent "retry"
+    #: whose arguments are byte-identical to the failed call it follows.
+    require_argument_change: bool = False
 
 
 @dataclass
@@ -229,7 +234,7 @@ def check_tool_rags_consistency(record: Record, _case_id: str, _options: Validat
     return 1
 
 
-def check_arguments(record: Record, case_id: str, _options: ValidationOptions) -> int:
+def check_arguments(record: Record, case_id: str, options: ValidationOptions) -> int:
     """6. A retried tool call may only change parameters listed in ``required``."""
     block = record[ARGUMENTS]
     if not block or block.get("argument_check") == SKIP_ARGUMENT_CHECK:
@@ -255,6 +260,7 @@ def check_arguments(record: Record, case_id: str, _options: ValidationOptions) -
             print(f"[validation] tool call count changed: {len(before)} -> {len(after)}")
             return 0
 
+        any_changed = False
         for call_before, call_after in zip(before, after, strict=True):
             if call_before.get("name") != call_after.get("name"):
                 print(
@@ -270,6 +276,7 @@ def check_arguments(record: Record, case_id: str, _options: ValidationOptions) -
                 for key in set(args_before) | set(args_after)
                 if args_before.get(key) != args_after.get(key)
             ]
+            any_changed = any_changed or bool(changed)
 
             definition = call_before.get("tool_definition")
             if not definition:
@@ -281,6 +288,10 @@ def check_arguments(record: Record, case_id: str, _options: ValidationOptions) -
                 if key not in required:
                     print(f"[validation] retry changed the optional parameter '{key}'")
                     return 0
+
+        if options.require_argument_change and not any_changed:
+            print("[validation] retry did not change any parameter")
+            return 0
     return 1
 
 
@@ -310,19 +321,23 @@ def check_reference(record: Record, _case_id: str, options: ValidationOptions) -
         if len(item) >= 2
     }
 
-    for passage in used:
-        title = passage.get("title", "")
-        fact = next((f for f in supporting if len(f) >= 2 and f[0] == title), None)
-        if fact is None:
+    expected: list[tuple[str, str]] = []
+    for fact in supporting:
+        if len(fact) < 2:
             return 0
-        sentence_id = fact[1]
+        title, sentence_id = fact[0], fact[1]
+        if isinstance(sentence_id, bool) or not isinstance(sentence_id, int) or sentence_id < 0:
+            return 0
         sentences = sentences_by_title.get(title)
         if sentences is None or sentence_id >= len(sentences):
             return 0
-        if passage.get("content", "").strip() != sentences[sentence_id].strip():
-            return 0
+        expected.append((title, sentences[sentence_id].strip()))
 
-    return int({p.get("title", "") for p in used} == {f[0] for f in supporting if f})
+    actual = [
+        (passage.get("title", ""), passage.get("content", "").strip())
+        for passage in used
+    ]
+    return int(Counter(actual) == Counter(expected))
 
 
 def check_tool_consistency(record: Record, case_id: str, _options: ValidationOptions) -> int:

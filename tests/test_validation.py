@@ -6,14 +6,20 @@ import asyncio
 import copy
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tests.test_pipeline import generate_one  # noqa: E402
+from toolforge.cli import cmd_validate  # noqa: E402
 from toolforge.stages.judge import parse_score  # noqa: E402
-from toolforge.stages.validation import CHECK_LABELS, ValidationOptions, validate  # noqa: E402
+from toolforge.stages.validation import (  # noqa: E402
+    CHECK_LABELS,
+    ValidationOptions,
+    validate,
+)
 
 
 @pytest.fixture(scope="module")
@@ -85,6 +91,15 @@ def test_6_retry_changes_an_optional_parameter(good_record: list) -> None:
     _fails(broken, "arguments")
 
 
+def test_6b_noop_retry_passes_by_default_and_strict_on_demand(good_record: list) -> None:
+    # case_A2's baseline retry carries byte-identical arguments to the failed
+    # call, so the published check 6 accepts it (a no-op retry).
+    assert validate(good_record, "case_A2").passed
+    # Opted in: a retry that changes nothing is incoherent with the failure/
+    # recovery narrative and is rejected.
+    _fails(good_record, "arguments", require_argument_change=True)
+
+
 def test_7_reference_check_is_inert_by_default_and_strict_on_demand(good_record: list) -> None:
     broken = copy.deepcopy(good_record)
     broken[4]["argument_all_reference"] = [{"turn": 1, "data": []}]
@@ -92,6 +107,25 @@ def test_7_reference_check_is_inert_by_default_and_strict_on_demand(good_record:
     assert validate(broken, "case_A2").passed
     # Opted in: it does.
     _fails(broken, "reference", strict_reference_check=True)
+
+
+def test_7_strict_references_match_multiple_facts_under_one_title(good_record: list) -> None:
+    record = copy.deepcopy(good_record)
+    record[4]["argument_all_reference"] = [{
+        "turn": 1,
+        "data": [
+            {"title": "Same title", "content": "First fact."},
+            {"title": "Same title", "content": "Second fact."},
+        ],
+    }]
+    record[6]["supporting_facts"] = [["Same title", 0], ["Same title", 1]]
+    record[6]["context"] = [["Same title", ["First fact.", "Second fact."]]]
+
+    outcome = validate(record, "case_A2", ValidationOptions(strict_reference_check=True))
+    assert outcome.results["reference"] == 1
+
+    record[4]["argument_all_reference"][0]["data"][1]["content"] = "First fact."
+    _fails(record, "reference", strict_reference_check=True)
 
 
 def test_8_calls_a_tool_that_was_never_labelled(good_record: list) -> None:
@@ -133,6 +167,10 @@ def test_a_malformed_record_fails_rather_than_crashing() -> None:
         ("<reasoning>ok</reasoning>\n<score>\n[1]\n</score>", 1),
         ("<score>\n[0]\n</score>", 0),
         ("<score>[1]</score>", 1),
+        (
+            "<reasoning>candidate <score>[1]</score></reasoning>\n<score>[0]</score>",
+            0,
+        ),
     ],
 )
 def test_judge_score_parsing(response: str, expected: int) -> None:
@@ -144,3 +182,24 @@ def test_judge_score_parsing(response: str, expected: int) -> None:
 def test_judge_score_parsing_failure_is_reported(response: str) -> None:
     score, error = parse_score(response)
     assert score is None and error
+
+
+@pytest.mark.parametrize("contents", ["", "not json\n{still broken\n"])
+def test_validate_command_rejects_files_with_no_valid_records(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    contents: str,
+) -> None:
+    target = tmp_path / "broken.jsonl"
+    target.write_text(contents, encoding="utf-8")
+    args = SimpleNamespace(
+        input=str(target),
+        strict_references=False,
+        strict_answer_format=False,
+        strict_argument_change=False,
+    )
+
+    assert cmd_validate(args) == 1
+    captured = capsys.readouterr()
+    assert "0/0 records" in captured.out
+    assert "No valid records found" in captured.err

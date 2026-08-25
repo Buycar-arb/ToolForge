@@ -35,6 +35,7 @@ from toolforge.webui import (
 )
 from toolforge.webui.components import config_chips
 from toolforge.webui.i18n import set_language, t
+from toolforge.webui.security import launch_security
 
 
 def build(language: str | None = None) -> gr.Blocks:
@@ -72,6 +73,7 @@ def launch(
     language: str | None = None,
 ) -> None:
     """Start the server (used by ``toolforge webui``)."""
+    auth, show_error = launch_security(host, share)
     print(f"ToolForge {__version__}")
     print(settings.describe())
     print(f"\nOpening http://{host}:{port}\n")
@@ -79,7 +81,8 @@ def launch(
         server_name=host,
         server_port=port,
         share=share,
-        show_error=True,
+        auth=auth,
+        show_error=show_error,
         **compat.launch_kwargs(theme.build_theme(), theme.CSS),
     )
 

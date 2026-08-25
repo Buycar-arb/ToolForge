@@ -221,6 +221,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         validation_options=ValidationOptions(
             strict_reference_check=args.strict_references,
             strict_final_answer_format=args.strict_answer_format,
+            require_argument_change=args.strict_argument_change,
         ),
     )
     results = asyncio.run(
@@ -250,6 +251,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     options = ValidationOptions(
         strict_reference_check=args.strict_references,
         strict_final_answer_format=args.strict_answer_format,
+        require_argument_change=args.strict_argument_change,
     )
     passed = 0
     total = 0
@@ -270,6 +272,9 @@ def cmd_validate(args: argparse.Namespace) -> int:
     print(f"\n{passed}/{total} records pass all nine checks")
     for reason, count in failures.most_common():
         print(f"  {count:>5}×  {reason}")
+    if total == 0:
+        print(f"No valid records found in {args.input}.", file=sys.stderr)
+        return 1
     return 0 if passed == total else 1
 
 
@@ -360,12 +365,15 @@ def build_parser() -> argparse.ArgumentParser:
                           help="enable check 7, which was inert in the published release")
     generate.add_argument("--strict-answer-format", action="store_true",
                           help="reject a malformed final <answer> block instead of warning")
+    generate.add_argument("--strict-argument-change", action="store_true",
+                          help="reject a retry whose arguments are identical to the failed call")
     generate.set_defaults(func=cmd_generate)
 
     validate_cmd = subparsers.add_parser("validate", help="re-run the rule checks on generated data")
     validate_cmd.add_argument("input", help="generated-data JSONL")
     validate_cmd.add_argument("--strict-references", action="store_true")
     validate_cmd.add_argument("--strict-answer-format", action="store_true")
+    validate_cmd.add_argument("--strict-argument-change", action="store_true")
     validate_cmd.set_defaults(func=cmd_validate)
 
     convert = subparsers.add_parser("convert", help="convert between Parquet and JSONL")
@@ -375,9 +383,17 @@ def build_parser() -> argparse.ArgumentParser:
     convert.set_defaults(func=cmd_convert)
 
     webui = subparsers.add_parser("webui", help="launch the visual interface")
-    webui.add_argument("--host", default="127.0.0.1")
+    webui.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="listen address; non-loopback hosts require Web UI credentials",
+    )
     webui.add_argument("--port", type=int, default=7860)
-    webui.add_argument("--share", action="store_true", help="create a public Gradio link")
+    webui.add_argument(
+        "--share",
+        action="store_true",
+        help="create an authenticated public Gradio link",
+    )
     webui.add_argument("--lang", choices=["zh", "en"], default=None,
                        help="interface language (default: zh, or $UI_LANG)")
     webui.set_defaults(func=cmd_webui)

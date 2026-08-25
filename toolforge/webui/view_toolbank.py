@@ -97,9 +97,9 @@ def build() -> None:
 
         run_button = gr.Button(t("variants.run"), variant="primary", size="lg")
         status, log = status_and_log(t("variants.status"))
-        buffer = LogBuffer()
-
         def launch(raw_tool, out, model_id, temp, tokens, count, cos, bm):
+            # Keep streamed logs private to this callback invocation.
+            buffer = LogBuffer()
             try:
                 original = json.loads(raw_tool)
             except json.JSONDecodeError as exc:

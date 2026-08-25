@@ -26,9 +26,12 @@ def parse_score(response: str) -> tuple[int | None, str | None]:
     Returns ``(score, None)`` on success or ``(None, reason)`` when the judge's
     output could not be parsed.
     """
-    match = re.search(r"<score>\s*\[\s*([01])\s*\]\s*</score>", response or "", re.DOTALL)
-    if match:
-        return int(match.group(1)), None
+    matches = re.findall(r"<score>\s*\[\s*([01])\s*\]\s*</score>", response or "", re.DOTALL)
+    if matches:
+        # Reasoning can quote or discuss an earlier candidate verdict.  The
+        # judge contract puts the actual verdict at the end, so use the last
+        # syntactically valid score block rather than the first one mentioned.
+        return int(matches[-1]), None
     return None, f"Could not parse a <score> block from the judge response: {(response or '')[:200]!r}"
 
 
