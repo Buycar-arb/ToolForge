@@ -1,6 +1,9 @@
 <div align="center">
 
-<h1>🔨&nbsp; ToolForge</h1>
+<h1>
+  <img src="assets/meituan.png" width="34" height="34" align="absmiddle" alt="Meituan">
+  &nbsp;ToolForge
+</h1>
 
 <p><b><a href="https://arxiv.org/abs/2512.16149">A Data Synthesis Pipeline for Multi-Hop Search without Real-World APIs</a></b></p>
 
