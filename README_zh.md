@@ -428,11 +428,11 @@ toolforge generate data/labelled/output.jsonl --case case_C1 --target 100
 如果 ToolForge 对你的研究有帮助，欢迎引用：
 
 ```bibtex
-@article{chen2025toolforge,
-  title={ToolForge: A Data Synthesis Pipeline for Multi-Hop Search without Real-World APIs},
-  author={Chen, Hao and Hu, Zhexin and Chai, Jiajun and Yang, Haocheng and He, Hang and Wang, Xiaohan and Lin, Wei and Wang, Luhang and Yin, Guojun and others},
-  journal={arXiv preprint arXiv:2512.16149},
-  year={2025}
+@inproceedings{chen2026toolforge,
+  title={ToolForge: A Data Synthesis Pipeline for Multi-Hop, Multi-Turn, and Self-Reflective Tool-Use Data},
+  author={Chen, Hao and Zhou, Shunyuan and Hu, Zhexin and Chai, Jiajun and He, Hang and Yang, Haocheng and Wang, Xiaohan and Lin, Wei and Wang, Tianyu and Zhao, Zhuofeng and others},
+  booktitle={Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing},
+  year={2026}
 }
 ```
 
